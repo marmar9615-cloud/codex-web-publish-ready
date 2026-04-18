@@ -1,4 +1,0 @@
-[default.extend-words]
-nto = "nto"  # For toolchains
-flate = "flate"  # https://crates.io/crates/flate2
-ba = "ba"  # Used in protoc_wrapper.rs with "baR"

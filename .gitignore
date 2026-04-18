@@ -69,6 +69,12 @@ coverage/
 # personal files
 personal/
 
+# local app artifacts
+.local/
+.playwright-cli/
+attached_assets/
+web/.workdirs/
+
 # os
 .DS_Store
 Thumbs.db
@@ -91,4 +97,3 @@ CHANGELOG.ignore.md
 # Python bytecode files
 __pycache__/
 *.pyc
-
