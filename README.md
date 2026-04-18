@@ -107,11 +107,11 @@ run command and Deployments build/run flow at the standalone backend path.
 
 ## Repository Layout
 
-- [`web/`](./web/) — browser client, Node gateway, Playwright coverage, and
+- [`web/`](./web/) - browser client, Node gateway, Playwright coverage, and
   Replit helpers
-- [`codex-rs/`](./codex-rs/) — Rust `app-server`, protocol, and shared backend
+- [`codex-rs/`](./codex-rs/) - Rust `app-server`, protocol, and shared backend
   crates
-- [`docs/`](./docs/) — broader repository and contributor docs
+- [`docs/`](./docs/) - broader repository and contributor docs
 
 ## License
 

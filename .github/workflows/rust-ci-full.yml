@@ -81,6 +81,7 @@ jobs:
     name: Argument comment lint - ${{ matrix.name }}
     runs-on: ${{ matrix.runs_on || matrix.runner }}
     timeout-minutes: 30
+    if: ${{ github.repository == 'openai/codex' }}
     strategy:
       fail-fast: false
       matrix:
@@ -138,6 +139,7 @@ jobs:
     name: Lint/Build — ${{ matrix.runner }} - ${{ matrix.target }}${{ matrix.profile == 'release' && ' (release)' || '' }}
     runs-on: ${{ matrix.runs_on || matrix.runner }}
     timeout-minutes: 30
+    if: ${{ github.repository == 'openai/codex' }}
     defaults:
       run:
         working-directory: codex-rs
@@ -512,6 +514,7 @@ jobs:
     # from tui_app_server/ to tui/. Incidentally, windows-arm64 was the main
     # offender for exceeding the timeout.
     timeout-minutes: 45
+    if: ${{ github.repository == 'openai/codex' }}
     defaults:
       run:
         working-directory: codex-rs
@@ -746,7 +749,7 @@ jobs:
         lint_build,
         tests,
       ]
-    if: always()
+    if: ${{ always() && github.repository == 'openai/codex' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Summarize
