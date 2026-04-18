@@ -4,7 +4,7 @@
 no mock backend path anymore: local development, Playwright smoke tests, and
 Replit deployment all require a real `codex` or `codex-app-server` binary.
 
-Release criteria live in [RELEASE_CHECKLIST.md](/Users/marmar/Desktop/codex/web/RELEASE_CHECKLIST.md).
+Release criteria live in [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md).
 
 ## Quickstart
 
@@ -19,7 +19,7 @@ CODEX_BIN="$HOME/.local/bin/codex" npm start
 Local with a standalone app-server build:
 
 ```bash
-cd /path/to/codex
+cd /path/to/codex-web-publish-ready
 ./web/scripts/build-codex-bin.sh
 cd web
 CODEX_BIN="$HOME/codex-bin/codex-app-server" npm start
@@ -117,7 +117,7 @@ cd web
 CODEX_BIN="$HOME/.local/bin/codex" PLAYWRIGHT_AUTH=1 PLAYWRIGHT_API_KEY="$OPENAI_API_KEY" npm run test:e2e:auth
 ```
 
-See [RELEASE_CHECKLIST.md](/Users/marmar/Desktop/codex/web/RELEASE_CHECKLIST.md) for the manual ChatGPT auth,
+See [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) for the manual ChatGPT auth,
 refresh, and Replit release gates.
 
 ## Replit
@@ -125,7 +125,7 @@ refresh, and Replit release gates.
 Build the standalone backend once on Replit:
 
 ```bash
-cd /path/to/codex
+cd /path/to/codex-web-publish-ready
 ./web/scripts/build-codex-bin.sh
 ```
 

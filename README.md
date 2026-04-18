@@ -1,60 +1,118 @@
-<p align="center"><code>npm i -g @openai/codex</code><br />or <code>brew install --cask codex</code></p>
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
+# Codex Web
+
+Production-grade browser UI for the real Rust `codex app-server`, built for
+live local use and publish-ready deployment on Replit.
+
 <p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
+  <img src="./.github/codex-web-screenshot.png" alt="Codex Web screenshot" width="100%" />
 </p>
-</br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
-</br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
 
----
+## What This Repo Ships
 
-## Quickstart
+This repository includes the upstream Codex Rust workspace, but the productized
+surface here is the web app under [`web/`](./web/). It runs against a real
+`codex` or `codex-app-server` binary only.
 
-### Installing and running Codex CLI
+Key capabilities:
 
-Install globally with your preferred package manager:
+- real `app-server` v2 transport over HTTP + WebSocket, with no mock mode
+- ChatGPT sign-in on localhost plus device-code auth for public deployments
+- API key sign-in for deterministic automation and live smoke testing
+- per-session backend processes and per-session workdirs
+- resume, fork, archive, unarchive, rename, and rollback thread workflows
+- image attachments, inline workdir file previews, and streaming output cards
+- settings, MCP management, rate-limit/status pills, and sidebar thread filters
+- Replit workflow and Deployments support using a standalone backend binary
 
-```shell
-# Install using npm
-npm install -g @openai/codex
+## Quick Start
+
+### Option 1: Use an installed Codex binary
+
+```bash
+cd web
+npm install
+CODEX_BIN="$HOME/.local/bin/codex" npm start
 ```
 
-```shell
-# Install using Homebrew
-brew install --cask codex
+### Option 2: Build the standalone backend first
+
+```bash
+./web/scripts/build-codex-bin.sh
+cd web
+CODEX_BIN="$HOME/codex-bin/codex-app-server" npm start
 ```
 
-Then simply run `codex` to get started.
+The web app serves on `http://127.0.0.1:5000` by default.
 
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
+## Authentication
 
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
+The web app supports two sign-in paths plus API keys:
 
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
+- `localhost` / `127.0.0.1`: browser callback auth via
+  `account/login/start { type: "chatgpt" }`
+- public or non-local deployments: gateway-managed device-code auth
+- API keys: `POST /api/login`
 
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
+The gateway also owns refresh-token handling for public device-code sessions, so
+long-running browser sessions can respond to
+`account/chatgptAuthTokens/refresh` without forcing a re-login.
 
-</details>
+## Live Testing
 
-### Using Codex with your ChatGPT plan
+This project is real-backend-only. The smoke suites run against an actual
+backend binary, not a mock.
 
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Business, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
+```bash
+cd web
+CODEX_BIN="$HOME/.local/bin/codex" npm run test:e2e
+```
 
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
+Auth-gated smoke:
 
-## Docs
+```bash
+cd web
+CODEX_BIN="$HOME/.local/bin/codex" PLAYWRIGHT_AUTH=1 npm run test:e2e:auth
+```
 
-- [**Codex Documentation**](https://developers.openai.com/codex)
-- [**Contributing**](./docs/contributing.md)
-- [**Installing & building**](./docs/install.md)
-- [**Open source fund**](./docs/open-source-fund.md)
+Authenticated workflow smoke with a real API key:
 
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+```bash
+cd web
+CODEX_BIN="$HOME/.local/bin/codex" \
+PLAYWRIGHT_AUTH=1 \
+PLAYWRIGHT_API_KEY="$OPENAI_API_KEY" \
+npm run test:e2e:auth
+```
+
+## Replit Deployment
+
+Replit should build the standalone backend once, then run the gateway against
+that binary:
+
+```bash
+./web/scripts/build-codex-bin.sh
+cd web
+CODEX_BIN="$HOME/codex-bin/codex-app-server" npm start
+```
+
+The checked-in [`.replit`](./.replit) file already points both the workspace
+run command and Deployments build/run flow at the standalone backend path.
+
+## Project Docs
+
+- [Web app guide](./web/README.md)
+- [Release checklist](./web/RELEASE_CHECKLIST.md)
+- [Replit deployment notes](./replit.md)
+- [Contributing](./docs/contributing.md)
+
+## Repository Layout
+
+- [`web/`](./web/) — browser client, Node gateway, Playwright coverage, and
+  Replit helpers
+- [`codex-rs/`](./codex-rs/) — Rust `app-server`, protocol, and shared backend
+  crates
+- [`docs/`](./docs/) — broader repository and contributor docs
+
+## License
+
+This repository is licensed under the [Apache-2.0 License](./LICENSE).

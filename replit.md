@@ -3,12 +3,12 @@
 This web app now runs against a real backend only. Replit should build and run
 the standalone `codex-app-server` binary, then point `web/server.mjs` at that
 binary through `CODEX_BIN`. The full release bar lives in
-[web/RELEASE_CHECKLIST.md](/Users/marmar/Desktop/codex/web/RELEASE_CHECKLIST.md).
+[web/RELEASE_CHECKLIST.md](./web/RELEASE_CHECKLIST.md).
 
 ## One-time build
 
 ```bash
-cd /path/to/codex
+cd /path/to/codex-web-publish-ready
 ./web/scripts/build-codex-bin.sh
 ```
 
