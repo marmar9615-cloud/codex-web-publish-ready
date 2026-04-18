@@ -3,7 +3,7 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 export function load(key, fallback) {
   try {
-    return { ...fallback, ...(JSON.parse(localStorage.getItem(key) ?? "{}")) };
+    return { ...fallback, ...JSON.parse(localStorage.getItem(key) ?? "{}") };
   } catch {
     return fallback;
   }
@@ -54,7 +54,10 @@ export const state = {
     { name: "/rename", desc: "Rename the active thread" },
     { name: "/archive", desc: "Archive the active thread" },
     { name: "/unarchive", desc: "Unarchive the active thread" },
-    { name: "/rollback", desc: "Drop the most recent turns from the active thread" },
+    {
+      name: "/rollback",
+      desc: "Drop the most recent turns from the active thread",
+    },
     { name: "/review", desc: "Run the reviewer on current changes" },
     { name: "/model", desc: "Choose the model for this session" },
     { name: "/approvals", desc: "Change approval policy" },

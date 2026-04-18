@@ -46,11 +46,13 @@ export function createRpc({
     return rpcCall("initialize", {
       clientInfo: { name: "codex-web", title: "Codex Web", version: "0.1.0" },
       capabilities: { experimentalApi: true },
-    }).then(() => {
-      state.initialized = true;
-    }).catch((error) => {
-      console.error("initialize failed", error);
-    });
+    })
+      .then(() => {
+        state.initialized = true;
+      })
+      .catch((error) => {
+        console.error("initialize failed", error);
+      });
   }
 
   function onJsonRpc(message) {
@@ -113,15 +115,24 @@ export function createRpc({
         appendSystem("Session expired. Reload the page.", "error");
         return;
       }
-      appendSystem(`Disconnected${event.reason ? ` (${event.reason})` : ""}. Reconnecting…`);
-      setTimeout(connectWs, Math.min(5000, 500 * 2 ** state.reconnectAttempts++));
+      appendSystem(
+        `Disconnected${event.reason ? ` (${event.reason})` : ""}. Reconnecting…`,
+      );
+      setTimeout(
+        connectWs,
+        Math.min(5000, 500 * 2 ** state.reconnectAttempts++),
+      );
     });
     ws.addEventListener("error", () => ws.close());
   }
 
   function waitForReady(timeoutMs = 5000) {
     return new Promise((resolve) => {
-      if (state.ws && state.ws.readyState === WebSocket.OPEN && state.initialized) {
+      if (
+        state.ws &&
+        state.ws.readyState === WebSocket.OPEN &&
+        state.initialized
+      ) {
         resolve();
         return;
       }

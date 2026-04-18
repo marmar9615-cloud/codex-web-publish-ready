@@ -5,7 +5,9 @@ export function isAuthErrorMessage(message) {
 }
 
 export function shouldSuppressRetryNoise(message) {
-  return /retrying sampling request|stream disconnected|^reconnecting/i.test(String(message ?? ""));
+  return /retrying sampling request|stream disconnected|^reconnecting/i.test(
+    String(message ?? ""),
+  );
 }
 
 function mapDecision(uiDecision) {
@@ -43,9 +45,12 @@ export function createNotificationHandlers({
 }) {
   async function refreshChatgptAuthTokens(message) {
     try {
-      const response = await fetch("/api/oauth/chatgpt/refresh", { method: "POST" });
+      const response = await fetch("/api/oauth/chatgpt/refresh", {
+        method: "POST",
+      });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error ?? `refresh failed (${response.status})`);
+      if (!response.ok)
+        throw new Error(data.error ?? `refresh failed (${response.status})`);
       rpcReply(message.id, data);
     } catch (error) {
       rpcRaw({
@@ -62,12 +67,21 @@ export function createNotificationHandlers({
     switch (message.method) {
       case "item/commandExecution/requestApproval": {
         const params = message.params ?? {};
-        const command = typeof params.command === "string"
-          ? params.command
-          : Array.isArray(params.command) ? params.command.join(" ") : "";
+        const command =
+          typeof params.command === "string"
+            ? params.command
+            : Array.isArray(params.command)
+              ? params.command.join(" ")
+              : "";
         renderApproval({
-          request: { kind: "exec", command, cwd: params.cwd, reason: params.reason },
-          onDecision: (decision) => rpcReply(message.id, { decision: mapDecision(decision) }),
+          request: {
+            kind: "exec",
+            command,
+            cwd: params.cwd,
+            reason: params.reason,
+          },
+          onDecision: (decision) =>
+            rpcReply(message.id, { decision: mapDecision(decision) }),
         });
         return;
       }
@@ -76,16 +90,22 @@ export function createNotificationHandlers({
         const item = state.itemsById.get(params.itemId)?.item;
         const files = (item?.changes ?? []).map((change) => ({
           path: change.path,
-          kind: typeof change.kind === "string" ? change.kind : (change.kind?.type ?? "update"),
+          kind:
+            typeof change.kind === "string"
+              ? change.kind
+              : (change.kind?.type ?? "update"),
           diff: change.diff,
         }));
         renderApproval({
           request: {
             kind: "apply_patch",
-            summary: files.length ? `${files.length} file(s)` : (params.reason ?? "patch"),
+            summary: files.length
+              ? `${files.length} file(s)`
+              : (params.reason ?? "patch"),
             files,
           },
-          onDecision: (decision) => rpcReply(message.id, { decision: mapDecision(decision) }),
+          onDecision: (decision) =>
+            rpcReply(message.id, { decision: mapDecision(decision) }),
         });
         return;
       }
@@ -100,7 +120,9 @@ export function createNotificationHandlers({
         return;
       case "item/tool/call":
         rpcReply(message.id, {
-          contentItems: [{ type: "inputText", text: "No matching local tool in web build" }],
+          contentItems: [
+            { type: "inputText", text: "No matching local tool in web build" },
+          ],
           success: false,
         });
         return;
@@ -111,7 +133,10 @@ export function createNotificationHandlers({
         rpcRaw({
           jsonrpc: "2.0",
           id: message.id,
-          error: { code: -32601, message: `unsupported server method: ${message.method}` },
+          error: {
+            code: -32601,
+            message: `unsupported server method: ${message.method}`,
+          },
         });
     }
   }
@@ -136,7 +161,9 @@ export function createNotificationHandlers({
           return;
         }
         const durationMs = params.turn?.durationMs;
-        appendSystem(`Turn complete${durationMs != null ? ` · ${durationMs} ms` : ""}`);
+        appendSystem(
+          `Turn complete${durationMs != null ? ` · ${durationMs} ms` : ""}`,
+        );
         return;
       }
       case "turn/failed":
@@ -157,7 +184,13 @@ export function createNotificationHandlers({
         const existing = state.itemsById.get(params.itemId);
         const text = `${existing?.item?.text ?? ""}${params.delta ?? ""}`;
         upsertItem(
-          { id: params.itemId, type: "agentMessage", text, phase: null, memoryCitation: null },
+          {
+            id: params.itemId,
+            type: "agentMessage",
+            text,
+            phase: null,
+            memoryCitation: null,
+          },
           !existing,
           false,
         );
@@ -175,20 +208,38 @@ export function createNotificationHandlers({
         return;
       case "item/reasoning/textDelta": {
         const existing = state.itemsById.get(params.itemId);
-        const base = existing?.item ?? { id: params.itemId, type: "reasoning", summary: [], content: [] };
+        const base = existing?.item ?? {
+          id: params.itemId,
+          type: "reasoning",
+          summary: [],
+          content: [],
+        };
         const content = [...(base.content ?? [])];
         const index = params.contentIndex ?? 0;
         content[index] = `${content[index] ?? ""}${params.delta ?? ""}`;
-        upsertItem({ ...base, id: params.itemId, type: "reasoning", content }, !existing, false);
+        upsertItem(
+          { ...base, id: params.itemId, type: "reasoning", content },
+          !existing,
+          false,
+        );
         return;
       }
       case "item/reasoning/summaryTextDelta": {
         const existing = state.itemsById.get(params.itemId);
-        const base = existing?.item ?? { id: params.itemId, type: "reasoning", summary: [], content: [] };
+        const base = existing?.item ?? {
+          id: params.itemId,
+          type: "reasoning",
+          summary: [],
+          content: [],
+        };
         const summary = [...(base.summary ?? [])];
         const index = params.summaryIndex ?? 0;
         summary[index] = `${summary[index] ?? ""}${params.delta ?? ""}`;
-        upsertItem({ ...base, id: params.itemId, type: "reasoning", summary }, !existing, false);
+        upsertItem(
+          { ...base, id: params.itemId, type: "reasoning", summary },
+          !existing,
+          false,
+        );
         return;
       }
       case "item/reasoning/summaryPartAdded":
@@ -219,7 +270,8 @@ export function createNotificationHandlers({
       case "thread/name/updated":
       case "thread/nameUpdated":
         if (state.activeThreadId === params.threadId) {
-          $("#thread-title").textContent = params.threadName ?? params.name ?? state.activeThreadId;
+          $("#thread-title").textContent =
+            params.threadName ?? params.name ?? state.activeThreadId;
         }
         renderThreads();
         return;
@@ -235,7 +287,8 @@ export function createNotificationHandlers({
       case "account/updated": {
         const authMode = params.authMode ?? null;
         const planType = params.planType ?? null;
-        const hasOauth = authMode === "chatgpt" || authMode === "chatgptAuthTokens";
+        const hasOauth =
+          authMode === "chatgpt" || authMode === "chatgptAuthTokens";
         const hasApiKey = authMode === "apikey";
         state.whoami = {
           ...(state.whoami ?? {}),
@@ -256,7 +309,9 @@ export function createNotificationHandlers({
         updateStatusBar();
         if (hasOauth) {
           clearAuthRequiredCard();
-          appendSystem(`Signed in with ChatGPT${planType ? ` (${planType})` : ""}`);
+          appendSystem(
+            `Signed in with ChatGPT${planType ? ` (${planType})` : ""}`,
+          );
           window.dispatchEvent(new CustomEvent("codex:signedIn"));
         } else if (hasApiKey) {
           clearAuthRequiredCard();
@@ -268,7 +323,10 @@ export function createNotificationHandlers({
       }
       case "account/login/completed":
         if (params?.success === false) {
-          appendSystem(`Login failed: ${params.error ?? "unknown error"}`, "error");
+          appendSystem(
+            `Login failed: ${params.error ?? "unknown error"}`,
+            "error",
+          );
         }
         return;
       case "account/rateLimits/updated":
@@ -288,7 +346,9 @@ export function createNotificationHandlers({
       case "error":
         if (shouldSuppressRetryNoise(params.error?.message)) {
           if (!state.whoami?.hasOauth && !state.whoami?.hasApiKey) {
-            showAuthRequiredCard("OpenAI authentication is required before this turn can complete.");
+            showAuthRequiredCard(
+              "OpenAI authentication is required before this turn can complete.",
+            );
           }
           return;
         }
@@ -305,7 +365,8 @@ export function createNotificationHandlers({
       case "hook/completed":
         return;
       case "skills/changed":
-        if (typeof window.__skillsRefresh === "function") window.__skillsRefresh();
+        if (typeof window.__skillsRefresh === "function")
+          window.__skillsRefresh();
         return;
       case "apps/listUpdated":
       case "app/list/updated":

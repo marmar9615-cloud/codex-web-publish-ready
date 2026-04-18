@@ -38,26 +38,39 @@ export function createRenderers({
       status.classList.remove("muted");
       button.textContent = "Sign out";
     } else {
-      status.textContent = whoami.realBinaryConfigured ? "not signed in" : "backend unavailable";
+      status.textContent = whoami.realBinaryConfigured
+        ? "not signed in"
+        : "backend unavailable";
       status.classList.add("muted");
       button.textContent = "Sign in";
     }
-    if (whoami.oauthError) status.textContent = `Sign-in failed: ${whoami.oauthError}`;
+    if (whoami.oauthError)
+      status.textContent = `Sign-in failed: ${whoami.oauthError}`;
   }
 
   function renderThreads() {
     const nav = $("#threads");
     if (!nav) return;
     nav.innerHTML = "";
-    $("#thread-filter-active")?.classList.toggle("active", !state.filterArchived);
-    $("#thread-filter-archived")?.classList.toggle("active", state.filterArchived);
-    const threads = state.threads.filter((thread) => Boolean(thread.archived) === state.filterArchived);
+    $("#thread-filter-active")?.classList.toggle(
+      "active",
+      !state.filterArchived,
+    );
+    $("#thread-filter-archived")?.classList.toggle(
+      "active",
+      state.filterArchived,
+    );
+    const threads = state.threads.filter(
+      (thread) => Boolean(thread.archived) === state.filterArchived,
+    );
     if (threads.length === 0) {
       nav.innerHTML = `<div class="muted thread-empty">No ${state.filterArchived ? "archived" : "saved"} threads yet.</div>`;
       return;
     }
     for (const thread of threads) {
-      const row = el("div", { class: `thread-item${thread.id === state.activeThreadId ? " active" : ""}` });
+      const row = el("div", {
+        class: `thread-item${thread.id === state.activeThreadId ? " active" : ""}`,
+      });
       const main = el("button", { class: "thread-main", type: "button" });
       main.innerHTML = `
         <div class="thread-name">${escapeHtml(thread.name ?? thread.id)}</div>
@@ -69,15 +82,16 @@ export function createRenderers({
       });
       const actions = el("div", { class: "thread-actions" });
       const menuButton = el("button", {
-        class: "thread-menu-toggle ghost",
-        type: "button",
+        "class": "thread-menu-toggle ghost",
+        "type": "button",
         "aria-label": "Thread actions",
-        title: "Thread actions",
+        "title": "Thread actions",
       });
       menuButton.textContent = "⋯";
       menuButton.addEventListener("click", (event) => {
         event.stopPropagation();
-        state.threadMenuOpenId = state.threadMenuOpenId === thread.id ? null : thread.id;
+        state.threadMenuOpenId =
+          state.threadMenuOpenId === thread.id ? null : thread.id;
         renderThreads();
       });
       actions.appendChild(menuButton);
@@ -86,11 +100,17 @@ export function createRenderers({
         const options = [
           { action: "fork", label: "Fork" },
           { action: "rename", label: "Rename" },
-          { action: thread.archived ? "unarchive" : "archive", label: thread.archived ? "Unarchive" : "Archive" },
+          {
+            action: thread.archived ? "unarchive" : "archive",
+            label: thread.archived ? "Unarchive" : "Archive",
+          },
           { action: "copyId", label: "Copy id" },
         ];
         for (const option of options) {
-          const button = el("button", { class: "thread-menu-item ghost", type: "button" });
+          const button = el("button", {
+            class: "thread-menu-item ghost",
+            type: "button",
+          });
           button.textContent = option.label;
           button.addEventListener("click", (event) => {
             event.stopPropagation();
@@ -189,7 +209,8 @@ export function createRenderers({
     const cell = el("div", { class: "cell user" });
     const bubble = el("div", { class: "bubble user-bubble" });
     const parts = (item.content ?? []).map((part) => {
-      if (part.type === "text") return `<div>${renderMarkdownish(part.text ?? "")}</div>`;
+      if (part.type === "text")
+        return `<div>${renderMarkdownish(part.text ?? "")}</div>`;
       if (part.type === "localImage") {
         return `<figure class="image-item"><img data-workdir-path="${escapeHtml(part.path ?? "")}" alt="uploaded image" /></figure>`;
       }
@@ -272,12 +293,15 @@ export function createRenderers({
   function renderFileChange(item) {
     const cell = el("div", { class: "cell assistant" });
     const card = el("div", { class: "tool-card" });
-    const counts = item.changes?.reduce((acc, change) => {
-      const kind = patchKind(change.kind);
-      acc[kind] = (acc[kind] ?? 0) + 1;
-      return acc;
-    }, {}) ?? {};
-    const summary = Object.entries(counts).map(([kind, count]) => `${count} ${kind}`).join(", ");
+    const counts =
+      item.changes?.reduce((acc, change) => {
+        const kind = patchKind(change.kind);
+        acc[kind] = (acc[kind] ?? 0) + 1;
+        return acc;
+      }, {}) ?? {};
+    const summary = Object.entries(counts)
+      .map(([kind, count]) => `${count} ${kind}`)
+      .join(", ");
     card.innerHTML = `
       <div class="tc-head">
         <span class="status-dot ${escapeHtml(item.status)}"></span>
@@ -287,7 +311,10 @@ export function createRenderers({
     `;
     if (item.changes?.some((change) => change.diff)) {
       const pre = el("pre", { "data-stream": "file" });
-      pre.textContent = item.changes.map((change) => change.diff ?? "").filter(Boolean).join("\n");
+      pre.textContent = item.changes
+        .map((change) => change.diff ?? "")
+        .filter(Boolean)
+        .join("\n");
       card.appendChild(pre);
     }
     for (const change of item.changes ?? []) {
@@ -307,12 +334,17 @@ export function createRenderers({
   }
 
   function renderDiff(diff) {
-    return diff.split("\n").map((line) => {
-      const safe = escapeHtml(line);
-      if (line.startsWith("+") && !line.startsWith("+++")) return `<div class="add">${safe}</div>`;
-      if (line.startsWith("-") && !line.startsWith("---")) return `<div class="del">${safe}</div>`;
-      return `<div>${safe}</div>`;
-    }).join("");
+    return diff
+      .split("\n")
+      .map((line) => {
+        const safe = escapeHtml(line);
+        if (line.startsWith("+") && !line.startsWith("+++"))
+          return `<div class="add">${safe}</div>`;
+        if (line.startsWith("-") && !line.startsWith("---"))
+          return `<div class="del">${safe}</div>`;
+        return `<div>${safe}</div>`;
+      })
+      .join("");
   }
 
   function renderMcp(item) {
@@ -353,7 +385,9 @@ export function createRenderers({
   function renderCollabAgentTool(item) {
     const cell = el("div", { class: "cell assistant" });
     const card = el("div", { class: "tool-card" });
-    const agentStates = Object.entries(item.agentsStates ?? {}).map(([threadId, value]) => `${threadId}: ${value}`).join("\n");
+    const agentStates = Object.entries(item.agentsStates ?? {})
+      .map(([threadId, value]) => `${threadId}: ${value}`)
+      .join("\n");
     card.innerHTML = `
       <div class="tc-head">
         <span class="status-dot ${escapeHtml(item.status ?? "inProgress")}"></span>
@@ -460,11 +494,12 @@ export function createRenderers({
   function renderApproval({ request, onDecision }) {
     const transcript = $("#transcript");
     const card = el("div", { class: "approval-card" });
-    const head = request.kind === "apply_patch"
-      ? "Apply patch?"
-      : request.kind === "exec"
-        ? "Run command?"
-        : "Approval requested";
+    const head =
+      request.kind === "apply_patch"
+        ? "Apply patch?"
+        : request.kind === "exec"
+          ? "Run command?"
+          : "Approval requested";
     let body;
     if (request.kind === "exec") {
       body = `
@@ -496,7 +531,8 @@ export function createRenderers({
       card.querySelectorAll("button").forEach((node) => {
         node.disabled = true;
       });
-      card.querySelector(".ap-head").textContent = `→ ${button.dataset.decision}`;
+      card.querySelector(".ap-head").textContent =
+        `→ ${button.dataset.decision}`;
     });
     transcript.appendChild(card);
     scrollToBottom();
@@ -546,7 +582,8 @@ export function createRenderers({
     pill.textContent = contextWindow
       ? `tokens: ${total.toLocaleString()} / ${contextWindow.toLocaleString()}`
       : `tokens: ${total.toLocaleString()}`;
-    pill.className = contextWindow && total / contextWindow > 0.75 ? "pill warn" : "pill";
+    pill.className =
+      contextWindow && total / contextWindow > 0.75 ? "pill warn" : "pill";
   }
 
   function renderRatePill(rateLimits) {
@@ -565,7 +602,9 @@ export function createRenderers({
     const used = primary != null ? `${Math.round(primary)}%` : "—";
     const credits = rateLimits.credits?.unlimited
       ? " · unlimited"
-      : (rateLimits.credits?.balance ? ` · ${rateLimits.credits.balance}` : "");
+      : rateLimits.credits?.balance
+        ? ` · ${rateLimits.credits.balance}`
+        : "";
     pill.textContent = `rate: ${used}${credits}`;
     pill.className = `pill${primary != null && primary >= 80 ? " warn" : ""}`;
   }

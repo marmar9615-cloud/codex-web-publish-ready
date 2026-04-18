@@ -7,7 +7,10 @@ function parseReviewTarget(arg) {
     return { type: "commit", sha, title: null };
   }
   if (arg.startsWith("branch:")) {
-    return { type: "baseBranch", branch: arg.slice("branch:".length).trim() || "main" };
+    return {
+      type: "baseBranch",
+      branch: arg.slice("branch:".length).trim() || "main",
+    };
   }
   return { type: "custom", instructions: arg };
 }
@@ -53,8 +56,8 @@ export function createCommandHandler({
         const whoami = state.whoami ?? {};
         appendSystem(
           `backend=${whoami.backend ?? "?"} · model=${state.settings.model || "auto"} · ` +
-          `approvals=${state.settings.approvalPolicy} · sandbox=${state.settings.sandboxMode} · ` +
-          `network=${state.settings.networkAccessEnabled} · workdir=${whoami.workdir ?? "?"}`,
+            `approvals=${state.settings.approvalPolicy} · sandbox=${state.settings.sandboxMode} · ` +
+            `network=${state.settings.networkAccessEnabled} · workdir=${whoami.workdir ?? "?"}`,
         );
         return;
       }
@@ -79,7 +82,11 @@ export function createCommandHandler({
           appendSystem("No active thread to rename.", "error");
           return;
         }
-        void handleThreadAction("rename", { id: state.activeThreadId, name: null, promptDefault: arg || null });
+        void handleThreadAction("rename", {
+          id: state.activeThreadId,
+          name: null,
+          promptDefault: arg || null,
+        });
         return;
       case "/archive":
         if (!state.activeThreadId) {
@@ -119,7 +126,9 @@ export function createCommandHandler({
           target: parseReviewTarget(arg),
         })
           .then(() => appendSystem("Review started."))
-          .catch((error) => appendSystem(`review failed: ${error.message}`, "error"));
+          .catch((error) =>
+            appendSystem(`review failed: ${error.message}`, "error"),
+          );
         return;
       case "/model":
         if (arg) {
@@ -142,7 +151,9 @@ export function createCommandHandler({
         }
         return;
       case "/sandbox":
-        if (["read-only", "workspace-write", "danger-full-access"].includes(arg)) {
+        if (
+          ["read-only", "workspace-write", "danger-full-access"].includes(arg)
+        ) {
           state.settings.sandboxMode = arg;
           save("settings", state.settings);
           updateStatusBar();
@@ -170,9 +181,12 @@ export function createCommandHandler({
         }
         return;
       case "/network":
-        state.settings.networkAccessEnabled = !state.settings.networkAccessEnabled;
+        state.settings.networkAccessEnabled =
+          !state.settings.networkAccessEnabled;
         save("settings", state.settings);
-        appendSystem(`network access → ${state.settings.networkAccessEnabled ? "on" : "off"}`);
+        appendSystem(
+          `network access → ${state.settings.networkAccessEnabled ? "on" : "off"}`,
+        );
         return;
       case "/resume":
         appendSystem("Pick a thread from the sidebar to resume.");
@@ -184,20 +198,29 @@ export function createCommandHandler({
         });
         return;
       case "/apps":
-        void openListModal("Apps", "app/list", { limit: 100, forceRefetch: true });
+        void openListModal("Apps", "app/list", {
+          limit: 100,
+          forceRefetch: true,
+        });
         return;
       case "/plugins":
         void openListModal("Plugins", "plugin/list", { limit: 100 });
         return;
       case "/experimental":
-        void openListModal("Experimental Features", "experimentalFeature/list", { limit: 100 });
+        void openListModal(
+          "Experimental Features",
+          "experimentalFeature/list",
+          { limit: 100 },
+        );
         return;
       case "/debug-config":
-        void refreshConfigState().then(() => openJsonModal("Config Snapshot", {
-          config: state.configSnapshot?.config ?? {},
-          layers: state.configSnapshot?.layers ?? [],
-          requirements: state.configRequirements?.requirements ?? null,
-        }));
+        void refreshConfigState().then(() =>
+          openJsonModal("Config Snapshot", {
+            config: state.configSnapshot?.config ?? {},
+            layers: state.configSnapshot?.layers ?? [],
+            requirements: state.configRequirements?.requirements ?? null,
+          }),
+        );
         return;
       case "/permissions":
         openSettings("approvals");
@@ -212,7 +235,9 @@ export function createCommandHandler({
           tags: { surface: "web" },
         })
           .then(() => appendSystem("Feedback uploaded."))
-          .catch((error) => appendSystem(`feedback failed: ${error.message}`, "error"));
+          .catch((error) =>
+            appendSystem(`feedback failed: ${error.message}`, "error"),
+          );
         return;
       case "/ps":
         openJsonModal("Tracked sessions", {
@@ -227,10 +252,13 @@ export function createCommandHandler({
             .then(() => {
               state.commandSessions.delete(processId);
             })
-            .catch(() => {}));
+            .catch(() => {}),
+        );
         if (state.activeThreadId) {
           requests.push(
-            rpcCall("thread/backgroundTerminals/clean", { threadId: state.activeThreadId }).catch(() => {}),
+            rpcCall("thread/backgroundTerminals/clean", {
+              threadId: state.activeThreadId,
+            }).catch(() => {}),
           );
         }
         void Promise.all(requests).then(() => appendSystem("Stop requested."));
@@ -256,7 +284,9 @@ export function createCommandHandler({
         }
         void rpcCall("thread/compact/start", { threadId: state.activeThreadId })
           .then(() => appendSystem("Compact requested."))
-          .catch((error) => appendSystem(`compact failed: ${error.message}`, "error"));
+          .catch((error) =>
+            appendSystem(`compact failed: ${error.message}`, "error"),
+          );
         return;
       default:
         appendSystem(`unknown command: ${command}`, "error");

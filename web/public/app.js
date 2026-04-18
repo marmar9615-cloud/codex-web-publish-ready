@@ -10,7 +10,10 @@ import { escapeHtml } from "./utils.js";
 import { createUploads, hydrateWorkdirMedia } from "./uploads.js";
 import { createRenderers } from "./renderers.js";
 import { createModals } from "./modals.js";
-import { createNotificationHandlers, isAuthErrorMessage } from "./notifications.js";
+import {
+  createNotificationHandlers,
+  isAuthErrorMessage,
+} from "./notifications.js";
 import { createRpc } from "./rpc.js";
 import { createCommandHandler } from "./commands.js";
 
@@ -44,7 +47,8 @@ function updateStatusBar() {
   backendPill.textContent = `backend: ${whoami.backend ?? "?"}`;
   backendPill.className = `pill ${whoami.backend === "real" ? "ok" : "warn"}`;
   $("#model-pill").textContent = `model: ${state.settings.model || "…"}`;
-  $("#approval-pill").textContent = `approvals: ${state.settings.approvalPolicy}`;
+  $("#approval-pill").textContent =
+    `approvals: ${state.settings.approvalPolicy}`;
   $("#sandbox-pill").textContent = `sandbox: ${state.settings.sandboxMode}`;
 }
 
@@ -55,7 +59,8 @@ const renderers = createRenderers({
   openLogin: () => modals.openLogin(),
   scrollToBottom,
   hydrateWorkdirMedia,
-  afterUpsertItem: (item, isStart, isComplete) => trackAfterUpsertItem(item, isStart, isComplete),
+  afterUpsertItem: (item, isStart, isComplete) =>
+    trackAfterUpsertItem(item, isStart, isComplete),
 });
 
 const uploads = createUploads({
@@ -168,7 +173,10 @@ async function refreshThreads() {
         id: thread.id,
         name: thread.name ?? thread.preview ?? thread.id,
         preview: thread.preview ?? "",
-        lastActive: (thread.updatedAt ?? thread.createdAt ?? Math.floor(Date.now() / 1000)) * 1000,
+        lastActive:
+          (thread.updatedAt ??
+            thread.createdAt ??
+            Math.floor(Date.now() / 1000)) * 1000,
         status: thread.status ?? "active",
         archived: thread.status === "archived",
       }));
@@ -186,10 +194,15 @@ async function refreshThreads() {
 async function refreshModels() {
   if (!state.initialized) return;
   try {
-    const response = await rpc.rpcCall("model/list", { limit: 100, includeHidden: false });
+    const response = await rpc.rpcCall("model/list", {
+      limit: 100,
+      includeHidden: false,
+    });
     const models = Array.isArray(response?.data)
       ? response.data
-      : (Array.isArray(response?.models) ? response.models : []);
+      : Array.isArray(response?.models)
+        ? response.models
+        : [];
     state.models = models;
     if (!state.settings.model && models.length) {
       const pick = models.find((model) => model.isDefault) ?? models[0];
@@ -247,7 +260,8 @@ async function refreshConfigState() {
       includeLayers: true,
       cwd: state.whoami?.workdir ?? null,
     });
-    state.configRequirements = await rpc.rpcCall("configRequirements/read", {})
+    state.configRequirements = await rpc
+      .rpcCall("configRequirements/read", {})
       .catch(() => ({ requirements: null }));
   } catch (error) {
     console.warn("config/read failed", error.message);
@@ -257,7 +271,9 @@ async function refreshConfigState() {
 async function refreshExperimentalFeatures() {
   if (!state.initialized) return;
   try {
-    const response = await rpc.rpcCall("experimentalFeature/list", { limit: 100 });
+    const response = await rpc.rpcCall("experimentalFeature/list", {
+      limit: 100,
+    });
     state.experimentalFeatures = response?.data ?? [];
   } catch (error) {
     console.warn("experimentalFeature/list failed", error.message);
@@ -268,17 +284,37 @@ async function pushSettingsToBackend() {
   if (!state.initialized) return;
   const settings = state.settings;
   const edits = [
-    ...(settings.model ? [{ keyPath: "model", value: settings.model, mergeStrategy: "replace" }] : []),
-    { keyPath: "model_reasoning_effort", value: settings.modelReasoningEffort, mergeStrategy: "replace" },
-    { keyPath: "approval_policy", value: settings.approvalPolicy, mergeStrategy: "replace" },
-    { keyPath: "sandbox_mode", value: settings.sandboxMode, mergeStrategy: "replace" },
-    { keyPath: "tools.web_search", value: settings.webSearchMode !== "disabled", mergeStrategy: "replace" },
+    ...(settings.model
+      ? [{ keyPath: "model", value: settings.model, mergeStrategy: "replace" }]
+      : []),
+    {
+      keyPath: "model_reasoning_effort",
+      value: settings.modelReasoningEffort,
+      mergeStrategy: "replace",
+    },
+    {
+      keyPath: "approval_policy",
+      value: settings.approvalPolicy,
+      mergeStrategy: "replace",
+    },
+    {
+      keyPath: "sandbox_mode",
+      value: settings.sandboxMode,
+      mergeStrategy: "replace",
+    },
+    {
+      keyPath: "tools.web_search",
+      value: settings.webSearchMode !== "disabled",
+      mergeStrategy: "replace",
+    },
   ];
-  await rpc.rpcCall("config/batchWrite", {
-    edits,
-    expectedVersion: state.configSnapshot?.layers?.[0]?.version ?? null,
-    reloadUserConfig: true,
-  }).catch(() => {});
+  await rpc
+    .rpcCall("config/batchWrite", {
+      edits,
+      expectedVersion: state.configSnapshot?.layers?.[0]?.version ?? null,
+      reloadUserConfig: true,
+    })
+    .catch(() => {});
 }
 
 function clearConversationState() {
@@ -316,24 +352,38 @@ async function openThread(threadId) {
   renderers.renderThreads();
   try {
     try {
-      const response = await rpc.rpcCall("thread/read", { threadId, includeTurns: true });
+      const response = await rpc.rpcCall("thread/read", {
+        threadId,
+        includeTurns: true,
+      });
       if (response?.thread) hydrateThread(response.thread);
     } catch (error) {
-      console.warn("thread/read failed, resuming without hydration", error.message);
+      console.warn(
+        "thread/read failed, resuming without hydration",
+        error.message,
+      );
     }
-    await rpc.rpcCall("thread/resume", { threadId, persistExtendedHistory: true });
+    await rpc.rpcCall("thread/resume", {
+      threadId,
+      persistExtendedHistory: true,
+    });
     renderers.appendSystem(`Resumed thread ${threadId}.`);
   } catch (error) {
-    renderers.appendSystem(`Could not resume ${threadId}: ${error.message}`, "error");
+    renderers.appendSystem(
+      `Could not resume ${threadId}: ${error.message}`,
+      "error",
+    );
   }
 }
 
 function newThread() {
   if (state.activeThreadId && state.activeTurnId) {
-    void rpc.rpcCall("turn/interrupt", {
-      threadId: state.activeThreadId,
-      turnId: state.activeTurnId,
-    }).catch(() => {});
+    void rpc
+      .rpcCall("turn/interrupt", {
+        threadId: state.activeThreadId,
+        turnId: state.activeTurnId,
+      })
+      .catch(() => {});
   }
   state.activeThreadId = null;
   state.activeTurnId = null;
@@ -345,13 +395,16 @@ function newThread() {
 function onThreadStarted(thread) {
   if (!thread?.id) return;
   state.activeThreadId = thread.id;
-  $("#thread-title").textContent = thread.name ?? thread.preview ?? thread.id ?? "thread";
+  $("#thread-title").textContent =
+    thread.name ?? thread.preview ?? thread.id ?? "thread";
   const existing = state.threads.find((entry) => entry.id === thread.id);
   const snapshot = {
     id: thread.id,
     name: thread.name ?? thread.preview ?? thread.id,
     preview: thread.preview ?? "",
-    lastActive: (thread.updatedAt ?? thread.createdAt ?? Math.floor(Date.now() / 1000)) * 1000,
+    lastActive:
+      (thread.updatedAt ?? thread.createdAt ?? Math.floor(Date.now() / 1000)) *
+      1000,
     status: thread.status ?? "active",
     archived: thread.status === "archived",
   };
@@ -400,9 +453,15 @@ function syncCommandSessionFromItem(item) {
 
 function trackAfterUpsertItem(item) {
   if (state.activeTurnId) {
-    let turnIndex = state.turns.findIndex((record) => record.id === state.activeTurnId);
+    let turnIndex = state.turns.findIndex(
+      (record) => record.id === state.activeTurnId,
+    );
     if (turnIndex === -1) {
-      state.turns.push({ id: state.activeTurnId, status: "inProgress", items: [] });
+      state.turns.push({
+        id: state.activeTurnId,
+        status: "inProgress",
+        items: [],
+      });
       turnIndex = state.turns.length - 1;
     }
     const record = state.turns[turnIndex];
@@ -441,10 +500,15 @@ function onStandaloneCommandDelta(params) {
 async function rollbackTurns(numTurns) {
   if (!state.activeThreadId) return;
   try {
-    const result = await rpc.rpcCall("thread/rollback", { threadId: state.activeThreadId, numTurns });
+    const result = await rpc.rpcCall("thread/rollback", {
+      threadId: state.activeThreadId,
+      numTurns,
+    });
     if (result?.thread) {
       hydrateThread(result.thread);
-      renderers.appendSystem(`Rolled back ${numTurns} turn${numTurns === 1 ? "" : "s"}.`);
+      renderers.appendSystem(
+        `Rolled back ${numTurns} turn${numTurns === 1 ? "" : "s"}.`,
+      );
     }
   } catch (error) {
     renderers.appendSystem(`rollback failed: ${error.message}`, "error");
@@ -454,7 +518,10 @@ async function rollbackTurns(numTurns) {
 async function rollbackToItem(itemId) {
   const turnIndex = state.itemTurnIndex.get(itemId);
   if (turnIndex == null) {
-    renderers.appendSystem("Could not determine the turn for that rollback point.", "error");
+    renderers.appendSystem(
+      "Could not determine the turn for that rollback point.",
+      "error",
+    );
     return;
   }
   const numTurns = state.turns.length - turnIndex;
@@ -470,13 +537,15 @@ async function handleThreadAction(action, thread) {
   if (!threadId) return;
   switch (action) {
     case "fork": {
-      const result = await rpc.rpcCall("thread/fork", {
-        threadId,
-        persistExtendedHistory: true,
-      }).catch((error) => {
-        renderers.appendSystem(`fork failed: ${error.message}`, "error");
-        return null;
-      });
+      const result = await rpc
+        .rpcCall("thread/fork", {
+          threadId,
+          persistExtendedHistory: true,
+        })
+        .catch((error) => {
+          renderers.appendSystem(`fork failed: ${error.message}`, "error");
+          return null;
+        });
       const nextThread = result?.thread ?? result;
       if (nextThread?.id) await openThread(nextThread.id);
       return;
@@ -485,25 +554,35 @@ async function handleThreadAction(action, thread) {
       const proposed = thread?.promptDefault ?? thread?.name ?? "";
       const name = prompt("New thread name:", proposed);
       if (!name) return;
-      await rpc.rpcCall("thread/name/set", { threadId, name })
+      await rpc
+        .rpcCall("thread/name/set", { threadId, name })
         .then(async () => {
           const active = state.threads.find((entry) => entry.id === threadId);
           if (active) active.name = name;
-          if (state.activeThreadId === threadId) $("#thread-title").textContent = name;
+          if (state.activeThreadId === threadId)
+            $("#thread-title").textContent = name;
           await refreshThreads();
         })
-        .catch((error) => renderers.appendSystem(`rename failed: ${error.message}`, "error"));
+        .catch((error) =>
+          renderers.appendSystem(`rename failed: ${error.message}`, "error"),
+        );
       return;
     }
     case "archive":
-      await rpc.rpcCall("thread/archive", { threadId })
+      await rpc
+        .rpcCall("thread/archive", { threadId })
         .then(refreshThreads)
-        .catch((error) => renderers.appendSystem(`archive failed: ${error.message}`, "error"));
+        .catch((error) =>
+          renderers.appendSystem(`archive failed: ${error.message}`, "error"),
+        );
       return;
     case "unarchive":
-      await rpc.rpcCall("thread/unarchive", { threadId })
+      await rpc
+        .rpcCall("thread/unarchive", { threadId })
         .then(refreshThreads)
-        .catch((error) => renderers.appendSystem(`unarchive failed: ${error.message}`, "error"));
+        .catch((error) =>
+          renderers.appendSystem(`unarchive failed: ${error.message}`, "error"),
+        );
       return;
     case "copyId":
       try {
@@ -524,7 +603,9 @@ function bindUi() {
   $("#new-thread").addEventListener("click", newThread);
   $("#account-btn").addEventListener("click", onAccountClick);
   $("#settings-btn").addEventListener("click", () => modals.openSettings());
-  $("#attach-btn")?.addEventListener("click", () => $("#attach-input")?.click());
+  $("#attach-btn")?.addEventListener("click", () =>
+    $("#attach-input")?.click(),
+  );
   $("#attach-input")?.addEventListener("change", uploads.onAttachChange);
   $("#thread-filter-active")?.addEventListener("click", () => {
     state.filterArchived = false;
@@ -555,8 +636,14 @@ async function onInput(event) {
   const slashMatch = /(^|\n)(\/[A-Za-z\-]*)$/.exec(textBeforeCursor);
   if (slashMatch) {
     const query = slashMatch[2];
-    const items = state.slashCommands.filter((command) => command.name.startsWith(query));
-    showAutocomplete({ kind: "slash", items, anchorStart: position - query.length });
+    const items = state.slashCommands.filter((command) =>
+      command.name.startsWith(query),
+    );
+    showAutocomplete({
+      kind: "slash",
+      items,
+      anchorStart: position - query.length,
+    });
     return;
   }
   const mentionMatch = /(^|\s)@([A-Za-z0-9_\-./]*)$/.exec(textBeforeCursor);
@@ -569,8 +656,15 @@ async function onInput(event) {
         body: JSON.stringify({ query }),
       });
       const data = await response.json();
-      const items = (data.results ?? []).map((path) => ({ name: `@${path}`, desc: "file" }));
-      showAutocomplete({ kind: "file", items, anchorStart: position - query.length - 1 });
+      const items = (data.results ?? []).map((path) => ({
+        name: `@${path}`,
+        desc: "file",
+      }));
+      showAutocomplete({
+        kind: "file",
+        items,
+        anchorStart: position - query.length - 1,
+      });
     } catch {
       hideAutocomplete();
     }
@@ -586,9 +680,12 @@ function showAutocomplete({ kind, items, anchorStart }) {
     return;
   }
   setAutocompleteState({ kind, items, selected: 0, anchorStart });
-  autocomplete.innerHTML = items.map((item, index) =>
-    `<div class="ac-item ${index === 0 ? "selected" : ""}" data-idx="${index}">${escapeHtml(item.name)}<span class="ac-desc">${escapeHtml(item.desc ?? "")}</span></div>`,
-  ).join("");
+  autocomplete.innerHTML = items
+    .map(
+      (item, index) =>
+        `<div class="ac-item ${index === 0 ? "selected" : ""}" data-idx="${index}">${escapeHtml(item.name)}<span class="ac-desc">${escapeHtml(item.desc ?? "")}</span></div>`,
+    )
+    .join("");
   autocomplete.hidden = false;
   autocomplete.querySelectorAll(".ac-item").forEach((node) => {
     node.addEventListener("click", () => {
@@ -624,7 +721,8 @@ function moveSelection(delta) {
   const items = $$("#autocomplete .ac-item");
   if (!items.length) return;
   const autocompleteState = getAutocompleteState();
-  const selected = (autocompleteState.selected + delta + items.length) % items.length;
+  const selected =
+    (autocompleteState.selected + delta + items.length) % items.length;
   setAutocompleteState({ ...autocompleteState, selected });
   items.forEach((node, index) => {
     node.classList.toggle("selected", index === selected);
@@ -700,7 +798,12 @@ async function startTurn(text) {
     }
     const input = [];
     if (text) input.push({ type: "text", text, text_elements: [] });
-    input.push(...state.pendingUploads.map((upload) => ({ type: "localImage", path: upload.path })));
+    input.push(
+      ...state.pendingUploads.map((upload) => ({
+        type: "localImage",
+        path: upload.path,
+      })),
+    );
     await rpc.rpcCall("turn/start", {
       threadId,
       input,
@@ -728,7 +831,10 @@ async function interruptTurn() {
 }
 
 function showCliOnlyBanner(feature) {
-  renderers.appendSystem(`${feature} is not available in the web build. Use the CLI for that workflow.`, "error");
+  renderers.appendSystem(
+    `${feature} is not available in the web build. Use the CLI for that workflow.`,
+    "error",
+  );
 }
 
 function onAccountClick() {
