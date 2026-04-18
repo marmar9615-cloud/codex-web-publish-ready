@@ -1,0 +1,9 @@
+
+> codex-web@0.1.0 start
+> node server.mjs
+
+[1G[0K[codex-web] listening on http://0.0.0.0:5000
+[codex-web] codex binary: (not set — mock-only)
+[codex-web] workdir root: /home/runner/workspace/web/.workdirs
+[codex backend c9684078] [mock-codex] ready (app-server-protocol v2 subset)
+[codex backend f930e869] [mock-codex] ready (app-server-protocol v2 subset)

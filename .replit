@@ -1,0 +1,38 @@
+modules = ["rust-stable", "python-3.12", "nodejs-20", "rust-nightly"]
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd web && CODEX_BIN=${CODEX_BIN:-$HOME/codex-bin/codex-app-server} npm start"
+waitForPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[deployment]
+run = "cd web && CODEX_BIN=${CODEX_BIN:-$HOME/codex-bin/codex-app-server} npm start"
+build = "cd web && npm install && cd .. && ./web/scripts/build-codex-bin.sh"

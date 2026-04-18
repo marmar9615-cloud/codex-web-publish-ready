@@ -1,0 +1,227 @@
+//! Deserialization support for the `application/x-www-form-urlencoded` format.
+
+use form_urlencoded::{parse, Parse as UrlEncodedParse};
+use indexmap::map::{self, IndexMap};
+use serde_core::{
+    de::{self, value::MapDeserializer, Deserialize},
+    forward_to_deserialize_any,
+};
+
+#[doc(inline)]
+pub use serde_core::de::value::Error;
+
+pub mod empty_as_none;
+mod part;
+mod utils;
+mod val_or_vec;
+
+use self::{empty_as_none::EmptyAsNone, part::Part, val_or_vec::ValOrVec};
+
+/// Deserializes a `application/x-www-form-urlencoded` value from a `&[u8]`.
+///
+/// ```
+/// let meal = vec![
+///     ("bread".to_owned(), "baguette".to_owned()),
+///     ("cheese".to_owned(), "comté".to_owned()),
+///     ("meat".to_owned(), "ham".to_owned()),
+///     ("fat".to_owned(), "butter".to_owned()),
+/// ];
+///
+/// assert_eq!(
+///     serde_html_form::from_bytes::<Vec<(String, String)>>(
+///         b"bread=baguette&cheese=comt%C3%A9&meat=ham&fat=butter"
+///     ),
+///     Ok(meal)
+/// );
+/// ```
+pub fn from_bytes<'de, T>(input: &'de [u8]) -> Result<T, Error>
+where
+    T: Deserialize<'de>,
+{
+    T::deserialize(Deserializer::from_bytes(input))
+}
+
+/// Deserializes a `application/x-www-form-urlencoded` value from a `&str`.
+///
+/// ```
+/// let meal = vec![
+///     ("bread".to_owned(), "baguette".to_owned()),
+///     ("cheese".to_owned(), "comté".to_owned()),
+///     ("meat".to_owned(), "ham".to_owned()),
+///     ("fat".to_owned(), "butter".to_owned()),
+/// ];
+///
+/// assert_eq!(
+///     serde_html_form::from_str::<Vec<(String, String)>>(
+///         "bread=baguette&cheese=comt%C3%A9&meat=ham&fat=butter"
+///     ),
+///     Ok(meal)
+/// );
+/// ```
+pub fn from_str<'de, T>(input: &'de str) -> Result<T, Error>
+where
+    T: Deserialize<'de>,
+{
+    from_bytes(input.as_bytes())
+}
+
+/// A deserializer for the `application/x-www-form-urlencoded` format.
+///
+/// * Supported top-level outputs are structs, maps and sequences of pairs,
+///   with or without a given length.
+///
+/// * Main `deserialize` methods defers to `deserialize_map`.
+///
+/// * Everything else but `deserialize_seq` and `deserialize_seq_fixed_size`
+///   defers to `deserialize`.
+pub struct Deserializer<'de> {
+    inner: UrlEncodedParse<'de>,
+}
+
+impl<'de> Deserializer<'de> {
+    /// Returns a new `Deserializer`.
+    pub fn new(parse: UrlEncodedParse<'de>) -> Self {
+        Deserializer { inner: parse }
+    }
+
+    /// Returns a new `Deserializer` from a `&[u8]`.
+    pub fn from_bytes(input: &'de [u8]) -> Self {
+        Self::new(parse(input))
+    }
+}
+
+impl<'de> de::Deserializer<'de> for Deserializer<'de> {
+    type Error = Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        self.deserialize_map(visitor)
+    }
+
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_map(MapDeserializer::new(group_entries(self.inner).into_iter()))
+    }
+
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_seq(MapDeserializer::new(PartIterator(self.inner)))
+    }
+
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        let deserializer = MapDeserializer::new(PartIterator(self.inner));
+        deserializer.end()?;
+        visitor.visit_unit()
+    }
+
+    fn deserialize_newtype_struct<V>(self, _name: &str, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
+    forward_to_deserialize_any! {
+        bool
+        u8
+        u16
+        u32
+        u64
+        i8
+        i16
+        i32
+        i64
+        f32
+        f64
+        char
+        str
+        string
+        option
+        bytes
+        byte_buf
+        unit_struct
+        tuple_struct
+        struct
+        identifier
+        tuple
+        enum
+        ignored_any
+    }
+}
+
+/// Deserialization helper that treats empty values as `None`.
+///
+/// Use with `#[serde(deserialize_with)]`. Do not use with deserializers from
+/// other crates, as it may appear to work at first but result in strange
+/// behavior later.
+///
+/// # Example
+///
+/// ```
+/// # use serde::Deserialize;
+/// #[derive(Debug, PartialEq, Deserialize)]
+/// struct Form {
+///     #[serde(deserialize_with = "serde_html_form::de::empty_as_none")]
+///     value: Option<String>,
+/// }
+///
+/// assert_eq!(serde_html_form::from_str("value="), Ok(Form { value: None }));
+/// ```
+pub fn empty_as_none<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: de::Deserializer<'de>,
+{
+    EmptyAsNone::deserialize(deserializer).map(|EmptyAsNone(option)| option)
+}
+
+struct PartIterator<'de>(UrlEncodedParse<'de>);
+
+impl<'de> Iterator for PartIterator<'de> {
+    type Item = (Part<'de>, Part<'de>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(k, v)| (Part(k), Part(v)))
+    }
+}
+
+#[cfg(feature = "std")]
+type RandomState = std::collections::hash_map::RandomState;
+
+#[cfg(not(feature = "std"))]
+type RandomState = compile_error!("the `std` feature is currently required");
+
+fn group_entries(
+    parse: UrlEncodedParse<'_>,
+) -> IndexMap<Part<'_>, ValOrVec<Part<'_>>, RandomState> {
+    use map::Entry::*;
+
+    let mut res = IndexMap::default();
+
+    // silence unhelpful errors when we hit the compile_error! above anyways
+    #[cfg(feature = "std")]
+    for (key, value) in parse {
+        match res.entry(Part(key)) {
+            Vacant(v) => {
+                v.insert(ValOrVec::Val(Part(value)));
+            }
+            Occupied(mut o) => {
+                o.get_mut().push(Part(value));
+            }
+        }
+    }
+
+    res
+}
+
+#[cfg(test)]
+mod tests;

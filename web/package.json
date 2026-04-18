@@ -1,0 +1,24 @@
+{
+  "name": "codex-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-based front-end for Codex CLI with parity to codex-tui.",
+  "scripts": {
+    "start": "CODEX_BIN=\"${CODEX_BIN:-$HOME/.local/bin/codex}\" node server.mjs",
+    "start:prod": "NODE_ENV=production CODEX_BIN=\"${CODEX_BIN:-$HOME/.local/bin/codex}\" node server.mjs",
+    "test:e2e": "CODEX_BIN=\"${CODEX_BIN:-$HOME/.local/bin/codex}\" npx playwright test",
+    "test:e2e:auth": "CODEX_BIN=\"${CODEX_BIN:-$HOME/.local/bin/codex}\" PLAYWRIGHT_AUTH=1 npx playwright test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "ws": "^8.17.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
+  }
+}

@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+        matrix:
+            os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build with default features
+      run: cargo build --verbose
+    - name: Run tests on default features
+      run: cargo test --verbose
+    - name: Build with nltk features
+      run: cargo build --features nltk --verbose
+    - name: Run tests with nltk features
+      run: cargo test --features nltk --verbose
+    - name: Build with iso features
+      run: cargo build --features iso --verbose
+    - name: Run tests with iso features
+      run: cargo test --features iso --verbose
+    - name: Build with iso features
+      run: cargo build --features constructed --verbose
+    - name: Run tests with iso features
+      run: cargo test --features constructed --verbose

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codex Web</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <header>
+          <div class="brand">codex<span class="brand-accent">/web</span></div>
+          <button id="new-thread" type="button" title="New chat">＋</button>
+        </header>
+        <div class="sidebar-filters">
+          <button id="thread-filter-active" type="button" class="filter-pill active">Active</button>
+          <button id="thread-filter-archived" type="button" class="filter-pill">Archived</button>
+        </div>
+        <nav id="threads"></nav>
+        <footer>
+          <div id="account-info">
+            <span id="account-status" class="muted">checking…</span>
+            <button id="account-btn" type="button">Sign in</button>
+          </div>
+          <button id="settings-btn" type="button" class="full">Settings</button>
+        </footer>
+      </aside>
+
+      <main id="chat">
+        <div id="chat-header">
+          <div id="thread-title">New conversation</div>
+          <div id="status-bar">
+            <span id="backend-pill" class="pill">backend: …</span>
+            <span id="account-pill" class="pill" hidden>account: …</span>
+            <span id="model-pill" class="pill">model: …</span>
+            <span id="approval-pill" class="pill">approvals: …</span>
+            <span id="sandbox-pill" class="pill">sandbox: …</span>
+            <span id="token-pill" class="pill" hidden>tokens: …</span>
+            <span id="rate-pill" class="pill" hidden>rate: …</span>
+          </div>
+        </div>
+
+        <div id="transcript" tabindex="0"></div>
+
+        <form id="composer" autocomplete="off">
+          <div id="autocomplete" hidden></div>
+          <div id="pending-uploads" hidden></div>
+          <textarea id="input"
+            rows="1"
+            placeholder="Ask Codex anything. Use / for commands, @ to reference files…"></textarea>
+          <div class="composer-row">
+            <span id="composer-hint" class="muted">Enter to send · Shift+Enter for newline · / for commands · Esc to cancel</span>
+            <div>
+              <input id="attach-input" type="file" accept="image/*" hidden />
+              <button type="button" id="attach-btn">Attach</button>
+              <button type="button" id="cancel-btn" hidden>Stop</button>
+              <button type="submit" id="send-btn">Send</button>
+            </div>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-root"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

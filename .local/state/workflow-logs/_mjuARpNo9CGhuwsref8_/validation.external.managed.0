@@ -1,0 +1,47 @@
+VERDICT: REJECTED
+The web app is not ready for approval because the implemented client/gateway behavior is incompatible with canonical `app-server-protocol` in multiple core paths, so parity with `codex-tui` is not achieved against a real backend.
+
+CVERDICT: REJECTED
+ritical findings:
+- **Protocol contract mismatches in core RPC params/responses** (blocking):
+  - `config/value/write` is sent as `{ path: [...], value }`, but protocol requires `{ keyPath, mergeStrategy, value }`.
+  - Thread lifecycle uses `conversatThe web app is not ready for approval because the implemented client/gateway behavior is incompatible with canonical `app-server-protocol` in multiple core paths, so parity with `codex-tui` is not achieved against a real backend.
+ionId` throughout UI/mock (`thread/resume`, `turn/start`, `
+turn/interrupt`), while protocol v2 uses `threadId` for Critical findings:
+these calls.
+  - `thread/start` uses `sandboxMode` an- **Protocol contract mismatches in core RPC params/responses** (blocking):
+d expects `{ conversationId }`; protocol expects `sandbox` and  - `config/value/write` is sent as `{ path: [...], value }`, but protocol requires `{ keyPath, mergeStrategy, value }`.
+ returns `thread` object payload.
+  - `turn/start` omits requ  - Thread lifecycle uses `conversationId` throughout UI/mock (`thread/resume`, `turn/start`, `turn/interrupt`), while protocol v2 uses `threadId` for these calls.
+ired `threadId` and uses old field shapes; protocol expects `threadId  - `thread/start` uses `sandboxMode` and expects `{ conversationId }`; protocol expects `sandbox` and returns `thread` object payload.
+`, plus v2 override fields (`sandboxPolicy`, `effort`, etc.).
+  - `/compact` sends `thread/compact`, but canonical request is `thread/compact/start`.
+- **Auth flow uses wrong payload/response contract** (blocking):
+  - `account/login/start` is called with `{ method: "chatgpt" }`; protocol expects `LoginAccountParams` with `{ type: "chatgpt" | ... }`.
+  - UI expects `verificationUri`/`userCode` and `account/updated` payload containing account/email; protocol `LoginAccountResponse` and `AccountUpdatedNotification` shapes differ (`authUrl`/`verificationUrl`, `authMode`/`planType`).
+- **MCP response parsing mismatch** (blocking):
+  - UI expects `{ servers }` from `mcpServerStatus/list`, while protocol response is `{ data, nextCursor }`.
+- **Mock backend and Playwright validate non-canonical behavior**:
+  - `web/mock-codex.mjs` mirrors these non-canonical contracts, so tests pass in mock mode but do not prove real backend compatibility.
+
+Security: none observed that are severe/blocking for this task objective.
+
+Next actions:
+1. Rework `web/public/app.js` RPC calls and notification handling to match `codex-rs/app-server-protocol/schema/typescript/{ClientRequest,ServerNotification}` and v2 param/response types exactly.
+2. Update `web/mock-codex.mjs` to the same canonical contracts (threadId, keyPath/mergeStrategy, login response variants, MCP `data` shape) so tests enforce protocol fidelity.
+3. Add/adjust E2E coverage to assert canonical method/field usage and run at least one path against real `codex app-server` (or schema-driven contract tests) to prevent drift.  - `turn/start` omits required `threadId` and uses old field shapes; protocol expects `threadId`, plus v2 override fields (`sandboxPolicy`, `effort`, etc.).
+  - `/compact` sends `thread/compact`, but canonical request is `thread/compact/start`.
+- **Auth flow uses wrong payload/response contract** (blocking):
+  - `account/login/start` is called with `{ method: "chatgpt" }`; protocol expects `LoginAccountParams` with `{ type: "chatgpt" | ... }`.
+  - UI expects `verificationUri`/`userCode` and `account/updated` payload containing account/email; protocol `LoginAccountResponse` and `AccountUpdatedNotification` shapes differ (`authUrl`/`verificationUrl`, `authMode`/`planType`).
+- **MCP response parsing mismatch** (blocking):
+  - UI expects `{ servers }` from `mcpServerStatus/list`, while protocol response is `{ data, nextCursor }`.
+- **Mock backend and Playwright validate non-canonical behavior**:
+  - `web/mock-codex.mjs` mirrors these non-canonical contracts, so tests pass in mock mode but do not prove real backend compatibility.
+
+Security: none observed that are severe/blocking for this task objective.
+
+Next actions:
+1. Rework `web/public/app.js` RPC calls and notification handling to match `codex-rs/app-server-protocol/schema/typescript/{ClientRequest,ServerNotification}` and v2 param/response types exactly.
+2. Update `web/mock-codex.mjs` to the same canonical contracts (threadId, keyPath/mergeStrategy, login response variants, MCP `data` shape) so tests enforce protocol fidelity.
+3. Add/adjust E2E coverage to assert canonical method/field usage and run at least one path against real `codex app-server` (or schema-driven contract tests) to prevent drift.
