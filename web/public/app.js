@@ -193,6 +193,11 @@ async function refreshThreads() {
   renderers.renderThreads();
 }
 
+function modelSlug(model) {
+  if (!model || typeof model !== "object") return "";
+  return model.id ?? model.slug ?? model.model ?? "";
+}
+
 async function refreshModels() {
   if (!state.initialized) return;
   try {
@@ -206,12 +211,16 @@ async function refreshModels() {
         ? response.models
         : [];
     state.models = models;
-    if (!state.settings.model && models.length) {
-      const pick = models.find((model) => model.isDefault) ?? models[0];
-      const slug = pick?.id ?? pick?.model ?? pick?.slug ?? "";
-      if (slug) {
-        state.settings.model = slug;
-        save("settings", state.settings);
+    if (models.length) {
+      const slugs = new Set(models.map(modelSlug).filter(Boolean));
+      const current = state.settings.model;
+      if (!current || !slugs.has(current)) {
+        const pick = models.find((model) => model.isDefault) ?? models[0];
+        const slug = modelSlug(pick);
+        if (slug) {
+          state.settings.model = slug;
+          save("settings", state.settings);
+        }
       }
     }
     updateStatusBar();

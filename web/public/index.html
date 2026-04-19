@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#07090f" />
+    <meta name="description" content="Codex Web — the browser frontend for the Codex coding agent." />
     <title>Codex Web</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/styles.css" />
@@ -11,27 +13,38 @@
     <div id="app">
       <aside id="sidebar">
         <header>
-          <div class="brand">codex<span class="brand-accent">/web</span></div>
-          <button id="new-thread" type="button" title="New chat">＋</button>
+          <div class="brand" aria-label="Codex Web">
+            <span class="brand-mark" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.5 3.5 5.5 10.5 2.5 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span>codex<span class="brand-accent">/web</span></span>
+          </div>
+          <button id="new-thread" type="button" class="icon-btn ghost" title="New chat" aria-label="New chat">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M10 4.5v11M4.5 10h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </button>
         </header>
-        <div class="sidebar-filters">
-          <button id="thread-filter-active" type="button" class="filter-pill active">Active</button>
-          <button id="thread-filter-archived" type="button" class="filter-pill">Archived</button>
+        <div class="sidebar-filters" role="tablist" aria-label="Thread filters">
+          <button id="thread-filter-active" type="button" class="filter-pill active" role="tab" aria-selected="true">Active</button>
+          <button id="thread-filter-archived" type="button" class="filter-pill" role="tab" aria-selected="false">Archived</button>
         </div>
-        <nav id="threads"></nav>
+        <nav id="threads" aria-label="Conversations"></nav>
         <footer>
           <div id="account-info">
             <span id="account-status" class="muted">checking…</span>
             <button id="account-btn" type="button">Sign in</button>
           </div>
-          <button id="settings-btn" type="button" class="full">Settings</button>
+          <button id="settings-btn" type="button" class="full ghost">Settings</button>
         </footer>
       </aside>
 
       <main id="chat">
         <div id="chat-header">
           <div id="thread-title">New conversation</div>
-          <div id="status-bar">
+          <div id="status-bar" aria-label="Session status">
             <span id="backend-pill" class="pill">backend: …</span>
             <span id="account-pill" class="pill" hidden>account: …</span>
             <span id="model-pill" class="pill">model: …</span>
@@ -42,21 +55,71 @@
           </div>
         </div>
 
-        <div id="transcript" tabindex="0"></div>
+        <div id="transcript" tabindex="0" aria-label="Conversation"></div>
+        <template id="empty-hero-tpl">
+          <div class="empty-hero" aria-hidden="false">
+            <div class="empty-hero-mark" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22.5 7 11 19 5.5 13.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h1 class="empty-hero-title">How can I help today?</h1>
+            <p class="empty-hero-sub">I can read your code, run commands, apply patches, and browse the web. Try one of these to get started.</p>
+            <div class="empty-hero-chips">
+              <button type="button" class="hero-chip" data-prompt="Give me a plan to add a dark mode toggle.">
+                <span class="hero-chip-tag">plan</span>
+                Plan a feature
+              </button>
+              <button type="button" class="hero-chip" data-prompt="Explain what this project does and show me its architecture.">
+                <span class="hero-chip-tag">explain</span>
+                Explain this repo
+              </button>
+              <button type="button" class="hero-chip" data-prompt="Write tests for the most complex function you can find.">
+                <span class="hero-chip-tag">test</span>
+                Write tests
+              </button>
+              <button type="button" class="hero-chip" data-prompt="Find and fix any obvious bugs in recently-changed files.">
+                <span class="hero-chip-tag">fix</span>
+                Find bugs
+              </button>
+            </div>
+          </div>
+        </template>
 
         <form id="composer" autocomplete="off">
           <div id="autocomplete" hidden></div>
-          <div id="pending-uploads" hidden></div>
-          <textarea id="input"
-            rows="1"
-            placeholder="Ask Codex anything. Use / for commands, @ to reference files…"></textarea>
-          <div class="composer-row">
-            <span id="composer-hint" class="muted">Enter to send · Shift+Enter for newline · / for commands · Esc to cancel</span>
-            <div>
-              <input id="attach-input" type="file" accept="image/*" hidden />
-              <button type="button" id="attach-btn">Attach</button>
-              <button type="button" id="cancel-btn" hidden>Stop</button>
-              <button type="submit" id="send-btn">Send</button>
+          <div class="composer-shell">
+            <div id="pending-uploads" hidden></div>
+            <textarea id="input"
+              rows="1"
+              aria-label="Message Codex"
+              placeholder="Ask Codex anything. Use / for commands, @ to reference files…"></textarea>
+            <div class="composer-row">
+              <span id="composer-hint" class="muted">
+                <kbd>↵</kbd> send<span class="sep">·</span>
+                <kbd>⇧↵</kbd> newline<span class="sep">·</span>
+                <kbd>/</kbd> commands<span class="sep">·</span>
+                <kbd>esc</kbd> cancel
+              </span>
+              <div>
+                <input id="attach-input" type="file" accept="image/*" hidden />
+                <button type="button" id="attach-btn" class="ghost" title="Attach image">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:4px">
+                    <path d="M11.5 7 7 11.5a2.5 2.5 0 0 1-3.5-3.5l5-5a1.8 1.8 0 1 1 2.5 2.5L5.7 10.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>Attach
+                </button>
+                <button type="button" id="cancel-btn" class="danger" hidden>
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" style="vertical-align:-1px;margin-right:4px">
+                    <rect x="1.5" y="1.5" width="7" height="7" rx="1" fill="currentColor"/>
+                  </svg>Stop
+                </button>
+                <button type="submit" id="send-btn" class="primary">
+                  Send
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-1px;margin-left:4px">
+                    <path d="m3 8 10-4-4 10-2-4-4-2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </form>
@@ -66,6 +129,32 @@
     <!-- Modals -->
     <div id="modal-root"></div>
 
+    <script>
+      // Keep a rich empty-state hero in #transcript whenever it's empty.
+      const transcript = document.getElementById("transcript");
+      const heroTpl = document.getElementById("empty-hero-tpl");
+      const mountHero = () => {
+        if (!transcript || !heroTpl) return;
+        if (transcript.querySelector(".empty-hero")) return;
+        if (transcript.children.length > 0) return;
+        transcript.appendChild(heroTpl.content.cloneNode(true));
+      };
+      mountHero();
+      new MutationObserver(() => {
+        if (transcript.children.length === 0) mountHero();
+      }).observe(transcript, { childList: true });
+
+      // Hero chip click → fill composer with prompt
+      document.addEventListener("click", (event) => {
+        const chip = event.target.closest(".hero-chip[data-prompt]");
+        if (!chip) return;
+        const input = document.getElementById("input");
+        if (!input) return;
+        input.value = chip.dataset.prompt || "";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.focus();
+      });
+    </script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>
