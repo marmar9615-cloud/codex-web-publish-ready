@@ -9,7 +9,12 @@ import cookieParser from "cookie-parser";
 import { WebSocketServer } from "ws";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  createHmac,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -20,12 +25,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number.parseInt(process.env.PORT ?? "5000", 10);
 const HOST = "0.0.0.0";
 const PUBLIC_DIR = join(__dirname, "public");
-const WORKDIR_ROOT = resolve(process.env.CODEX_WEB_WORKDIR_ROOT ?? join(__dirname, ".workdirs"));
+const WORKDIR_ROOT = resolve(
+  process.env.CODEX_WEB_WORKDIR_ROOT ?? join(__dirname, ".workdirs"),
+);
 const CODEX_BIN = process.env.CODEX_BIN ?? "";
 const IS_PROD = process.env.NODE_ENV === "production";
 
-const CHATGPT_ISSUER = (process.env.CODEX_CHATGPT_ISSUER ?? "https://auth.openai.com").replace(/\/+$/, "");
-const CHATGPT_CLIENT_ID = process.env.CODEX_CHATGPT_CLIENT_ID ?? "app_EMoamEEZ73f0CkXaXp7hrann";
+const CHATGPT_ISSUER = (
+  process.env.CODEX_CHATGPT_ISSUER ?? "https://auth.openai.com"
+).replace(/\/+$/, "");
+const CHATGPT_CLIENT_ID =
+  process.env.CODEX_CHATGPT_CLIENT_ID ?? "app_EMoamEEZ73f0CkXaXp7hrann";
 const CHATGPT_ACCOUNTS_API = `${CHATGPT_ISSUER}/api/accounts`;
 const CHATGPT_DEVICE_REDIRECT_URI = `${CHATGPT_ISSUER}/deviceauth/callback`;
 
@@ -42,16 +52,22 @@ const sessions = new Map();
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_MAX = 1000;
 
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, s] of sessions) {
-    if (now - (s.lastSeenAt ?? s.createdAt) > SESSION_TTL_MS) sessions.delete(id);
-  }
-  if (sessions.size > SESSION_MAX) {
-    const sorted = [...sessions.entries()].sort((a, b) => (a[1].lastSeenAt ?? 0) - (b[1].lastSeenAt ?? 0));
-    while (sessions.size > SESSION_MAX) sessions.delete(sorted.shift()[0]);
-  }
-}, 60 * 60 * 1000).unref();
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [id, s] of sessions) {
+      if (now - (s.lastSeenAt ?? s.createdAt) > SESSION_TTL_MS)
+        sessions.delete(id);
+    }
+    if (sessions.size > SESSION_MAX) {
+      const sorted = [...sessions.entries()].sort(
+        (a, b) => (a[1].lastSeenAt ?? 0) - (b[1].lastSeenAt ?? 0),
+      );
+      while (sessions.size > SESSION_MAX) sessions.delete(sorted.shift()[0]);
+    }
+  },
+  60 * 60 * 1000,
+).unref();
 
 function touchSession(s) {
   if (s) s.lastSeenAt = Date.now();
@@ -79,11 +95,16 @@ const BACKEND_IDLE_MS = 5 * 60 * 1000;
 const STDERR_TAIL_BYTES = 1024;
 const DEVICE_CODE_TIMEOUT_MS = 15 * 60 * 1000;
 const PREVIEW_URL_TTL_SECONDS = 15 * 60;
-const FILE_SIGNING_SECRET = process.env.CODEX_WEB_FILE_SIGNING_SECRET ?? randomBytes(32).toString("hex");
+const FILE_SIGNING_SECRET =
+  process.env.CODEX_WEB_FILE_SIGNING_SECRET ?? randomBytes(32).toString("hex");
 
 function isSecureRequest(req) {
   const forwardedProto = req.headers["x-forwarded-proto"];
-  if (typeof forwardedProto === "string" && forwardedProto.split(",")[0].trim() === "https") return true;
+  if (
+    typeof forwardedProto === "string" &&
+    forwardedProto.split(",")[0].trim() === "https"
+  )
+    return true;
   return Boolean(req.socket && req.socket.encrypted);
 }
 
@@ -136,7 +157,11 @@ function backendState() {
 
 function resolvePathWithinSession(session, candidatePath) {
   if (typeof candidatePath !== "string" || !candidatePath.trim()) return null;
-  const resolved = resolve(candidatePath.startsWith("/") ? candidatePath : join(session.workdir, candidatePath));
+  const resolved = resolve(
+    candidatePath.startsWith("/")
+      ? candidatePath
+      : join(session.workdir, candidatePath),
+  );
   const rel = relative(session.workdir, resolved);
   if (rel.startsWith("..") || rel === "") {
     return rel === "" ? resolved : null;
@@ -150,17 +175,25 @@ function signPreviewToken(sessionId, filePath, expires) {
     .digest("hex");
 }
 
-function buildSignedPreviewUrl(session, filePath, expires = Math.floor(Date.now() / 1000) + PREVIEW_URL_TTL_SECONDS) {
+function buildSignedPreviewUrl(
+  session,
+  filePath,
+  expires = Math.floor(Date.now() / 1000) + PREVIEW_URL_TTL_SECONDS,
+) {
   const sig = signPreviewToken(session.id, filePath, expires);
   return `/api/workdir-file?path=${encodeURIComponent(filePath)}&expires=${expires}&sig=${sig}`;
 }
 
 function hasValidPreviewSignature(session, filePath, expires, sig) {
   if (!session || !filePath || !expires || !sig) return false;
-  if (Number.parseInt(String(expires), 10) < Math.floor(Date.now() / 1000)) return false;
+  if (Number.parseInt(String(expires), 10) < Math.floor(Date.now() / 1000))
+    return false;
   const expected = signPreviewToken(session.id, filePath, expires);
   try {
-    return timingSafeEqual(Buffer.from(sig, "hex"), Buffer.from(expected, "hex"));
+    return timingSafeEqual(
+      Buffer.from(sig, "hex"),
+      Buffer.from(expected, "hex"),
+    );
   } catch {
     return false;
   }
@@ -179,7 +212,8 @@ function decodeJwtPayload(jwt) {
 }
 
 function parseChatgptClaims(idToken, fallbackAccessToken) {
-  const claims = decodeJwtPayload(idToken) ?? decodeJwtPayload(fallbackAccessToken) ?? {};
+  const claims =
+    decodeJwtPayload(idToken) ?? decodeJwtPayload(fallbackAccessToken) ?? {};
   const profile = claims["https://api.openai.com/profile"] ?? {};
   const auth = claims["https://api.openai.com/auth"] ?? {};
   return {
@@ -205,13 +239,19 @@ function safeJsonParse(text) {
 }
 
 async function requestDeviceCode() {
-  const { response, data, text } = await requestJson(`${CHATGPT_ACCOUNTS_API}/deviceauth/usercode`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_id: CHATGPT_CLIENT_ID }),
-  });
+  const { response, data, text } = await requestJson(
+    `${CHATGPT_ACCOUNTS_API}/deviceauth/usercode`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: CHATGPT_CLIENT_ID }),
+    },
+  );
   if (!response.ok) {
-    throw new Error((data?.error?.message ?? data?.message ?? text) || `device code request failed with status ${response.status}`);
+    throw new Error(
+      (data?.error?.message ?? data?.message ?? text) ||
+        `device code request failed with status ${response.status}`,
+    );
   }
   return {
     deviceAuthId: data?.device_auth_id ?? data?.deviceAuthId,
@@ -224,25 +264,35 @@ async function requestDeviceCode() {
 async function pollForDeviceCode(deviceAuthId, userCode, intervalSeconds) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < DEVICE_CODE_TIMEOUT_MS) {
-    const { response, data, text } = await requestJson(`${CHATGPT_ACCOUNTS_API}/deviceauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        device_auth_id: deviceAuthId,
-        user_code: userCode,
-      }),
-    });
+    const { response, data, text } = await requestJson(
+      `${CHATGPT_ACCOUNTS_API}/deviceauth/token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          device_auth_id: deviceAuthId,
+          user_code: userCode,
+        }),
+      },
+    );
     if (response.ok) return data;
     if (response.status === 403 || response.status === 404) {
-      await new Promise((resolveSleep) => setTimeout(resolveSleep, intervalSeconds * 1000));
+      await new Promise((resolveSleep) =>
+        setTimeout(resolveSleep, intervalSeconds * 1000),
+      );
       continue;
     }
-    throw new Error(text || `device auth failed with status ${response.status}`);
+    throw new Error(
+      text || `device auth failed with status ${response.status}`,
+    );
   }
   throw new Error("device auth timed out after 15 minutes");
 }
 
-async function exchangeCodeForTokens({ authorization_code: authorizationCode, code_verifier: codeVerifier }) {
+async function exchangeCodeForTokens({
+  authorization_code: authorizationCode,
+  code_verifier: codeVerifier,
+}) {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code: authorizationCode,
@@ -250,36 +300,51 @@ async function exchangeCodeForTokens({ authorization_code: authorizationCode, co
     client_id: CHATGPT_CLIENT_ID,
     code_verifier: codeVerifier,
   });
-  const { response, data, text } = await requestJson(`${CHATGPT_ISSUER}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
+  const { response, data, text } = await requestJson(
+    `${CHATGPT_ISSUER}/oauth/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    },
+  );
   if (!response.ok) {
-    throw new Error((data?.error?.message ?? data?.message ?? text) || `oauth token exchange failed with status ${response.status}`);
+    throw new Error(
+      (data?.error?.message ?? data?.message ?? text) ||
+        `oauth token exchange failed with status ${response.status}`,
+    );
   }
   return data;
 }
 
 async function refreshOauthTokens(refreshToken) {
-  const { response, data, text } = await requestJson(`${CHATGPT_ISSUER}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: CHATGPT_CLIENT_ID,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-    }),
-  });
+  const { response, data, text } = await requestJson(
+    `${CHATGPT_ISSUER}/oauth/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: CHATGPT_CLIENT_ID,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
+    },
+  );
   if (!response.ok) {
-    const error = new Error((data?.error?.message ?? data?.message ?? text) || `token refresh failed with status ${response.status}`);
+    const error = new Error(
+      (data?.error?.message ?? data?.message ?? text) ||
+        `token refresh failed with status ${response.status}`,
+    );
     error.status = response.status;
     throw error;
   }
   return data;
 }
 
-function applyOauthTokensToSession(session, { access_token: accessToken, refresh_token: refreshToken, id_token: idToken }) {
+function applyOauthTokensToSession(
+  session,
+  { access_token: accessToken, refresh_token: refreshToken, id_token: idToken },
+) {
   const claims = parseChatgptClaims(idToken, accessToken);
   session.apiKey = undefined;
   session.oauth = {
@@ -329,11 +394,17 @@ function syncSessionAuthToBackend(session) {
 
 function startDeviceCodeLogin(session) {
   const existing = session.oauth;
-  if (existing?.pending && existing?.deviceAuthId && existing?.verificationUrl && existing?.userCode) {
+  if (
+    existing?.pending &&
+    existing?.deviceAuthId &&
+    existing?.verificationUrl &&
+    existing?.userCode
+  ) {
     return {
       verificationUrl: existing.verificationUrl,
       userCode: existing.userCode,
-      expiresAt: (existing.loginStartedAt ?? Date.now()) + DEVICE_CODE_TIMEOUT_MS,
+      expiresAt:
+        (existing.loginStartedAt ?? Date.now()) + DEVICE_CODE_TIMEOUT_MS,
     };
   }
   return requestDeviceCode().then((deviceCode) => {
@@ -348,7 +419,11 @@ function startDeviceCodeLogin(session) {
       loginStartedAt: Date.now(),
     };
 
-    void pollForDeviceCode(deviceCode.deviceAuthId, deviceCode.userCode, deviceCode.interval)
+    void pollForDeviceCode(
+      deviceCode.deviceAuthId,
+      deviceCode.userCode,
+      deviceCode.interval,
+    )
       .then(exchangeCodeForTokens)
       .then((tokens) => {
         if (session.oauth?.deviceAuthId !== deviceCode.deviceAuthId) return;
@@ -381,14 +456,25 @@ app.use((_req, res, next) => {
   if (!IS_PROD) res.setHeader("Cache-Control", "no-store");
   next();
 });
+
+app.get("/healthz", (_req, res) => {
+  const ok = hasRealBackendConfigured();
+  res.status(ok ? 200 : 503).json({
+    ok,
+    backend: backendState(),
+    realBinaryConfigured: ok,
+    workdirRoot: WORKDIR_ROOT,
+  });
+});
+
 app.use(express.static(PUBLIC_DIR));
 
 app.get("/api/whoami", (req, res) => {
   const session = getOrCreateSession(req, res);
   const hasOauth = Boolean(
-    session.oauth?.accessToken
-      || session.oauth?.authMode === "chatgpt"
-      || session.oauth?.authMode === "chatgptAuthTokens",
+    session.oauth?.accessToken ||
+    session.oauth?.authMode === "chatgpt" ||
+    session.oauth?.authMode === "chatgptAuthTokens",
   );
   res.json({
     sessionId: session.id,
@@ -403,7 +489,11 @@ app.get("/api/whoami", (req, res) => {
           chatgptAccountId: session.oauth?.chatgptAccountId ?? null,
         }
       : null,
-    authMethod: hasOauth ? (session.oauth?.authMode ?? "chatgpt") : (session.apiKey ? "apikey" : null),
+    authMethod: hasOauth
+      ? (session.oauth?.authMode ?? "chatgpt")
+      : session.apiKey
+        ? "apikey"
+        : null,
     backend: backendState(),
     realBinaryConfigured: hasRealBackendConfigured(),
     workdir: session.workdir,
@@ -470,7 +560,9 @@ app.post("/api/oauth/chatgpt/refresh", sameOriginOnly, async (req, res) => {
 
 app.get("/api/threads", (req, res) => {
   const session = getOrCreateSession(req, res);
-  const threads = [...session.threads.values()].sort((a, b) => b.lastActive - a.lastActive);
+  const threads = [...session.threads.values()].sort(
+    (a, b) => b.lastActive - a.lastActive,
+  );
   res.json({ threads });
 });
 
@@ -493,7 +585,9 @@ app.post("/api/upload", sameOriginOnly, (req, res) => {
   }
   const uploadsDir = join(session.workdir, ".uploads");
   mkdirSync(uploadsDir, { recursive: true });
-  const safeExt = extname(String(name || "")).slice(0, 12) || guessExtensionFromMime(mimeType);
+  const safeExt =
+    extname(String(name || "")).slice(0, 12) ||
+    guessExtensionFromMime(mimeType);
   const filePath = join(uploadsDir, `${randomUUID()}${safeExt}`);
   writeFileSync(filePath, Buffer.from(dataBase64, "base64"));
   res.json({
@@ -504,7 +598,10 @@ app.post("/api/upload", sameOriginOnly, (req, res) => {
 
 app.get("/api/workdir-file/sign", sameOriginOnly, (req, res) => {
   const session = getOrCreateSession(req, res);
-  const filePath = resolvePathWithinSession(session, String(req.query.path ?? ""));
+  const filePath = resolvePathWithinSession(
+    session,
+    String(req.query.path ?? ""),
+  );
   if (!filePath || !existsSync(filePath)) {
     res.status(404).json({ error: "file not found" });
     return;
@@ -514,7 +611,10 @@ app.get("/api/workdir-file/sign", sameOriginOnly, (req, res) => {
 
 app.get("/api/workdir-file", (req, res) => {
   const session = getOrCreateSession(req, res);
-  const filePath = resolvePathWithinSession(session, String(req.query.path ?? ""));
+  const filePath = resolvePathWithinSession(
+    session,
+    String(req.query.path ?? ""),
+  );
   const expires = String(req.query.expires ?? "");
   const sig = String(req.query.sig ?? "");
   if (!filePath || !existsSync(filePath)) {
@@ -530,11 +630,16 @@ app.get("/api/workdir-file", (req, res) => {
 
 function guessExtensionFromMime(mimeType) {
   switch (mimeType) {
-    case "image/png": return ".png";
-    case "image/jpeg": return ".jpg";
-    case "image/webp": return ".webp";
-    case "image/gif": return ".gif";
-    default: return "";
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    default:
+      return "";
   }
 }
 
@@ -557,7 +662,10 @@ async function searchWorkdir(root, query) {
       const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         await walk(full, rel);
-      } else if (entry.name.toLowerCase().includes(lower) || rel.toLowerCase().includes(lower)) {
+      } else if (
+        entry.name.toLowerCase().includes(lower) ||
+        rel.toLowerCase().includes(lower)
+      ) {
         results.push(rel);
       }
     }
@@ -593,7 +701,8 @@ wss.on("connection", (ws, req) => {
 // ---------- per-session backend lifecycle ----------
 
 function ensureBackend(session) {
-  if (session.backend?.child && !session.backend.child.killed) return session.backend;
+  if (session.backend?.child && !session.backend.child.killed)
+    return session.backend;
   if (!hasRealBackendConfigured()) return null;
 
   const codexHome = join(session.workdir, ".codex");
@@ -658,7 +767,9 @@ function killBackend(session, reason) {
   }
   const child = backend.child;
   if (child && !child.killed) {
-    process.stderr.write(`[codex-web] killing backend (${reason}) for session ${session.id.slice(0, 8)}\n`);
+    process.stderr.write(
+      `[codex-web] killing backend (${reason}) for session ${session.id.slice(0, 8)}\n`,
+    );
     try {
       child.kill("SIGTERM");
     } catch {}
@@ -679,7 +790,9 @@ function killBackend(session, reason) {
 function attachWs(session, ws) {
   const backend = ensureBackend(session);
   if (!backend) {
-    const reason = hasRealBackendConfigured() ? "spawn failed" : "backend unavailable: set CODEX_BIN";
+    const reason = hasRealBackendConfigured()
+      ? "spawn failed"
+      : "backend unavailable: set CODEX_BIN";
     try {
       ws.close(4500, reason.slice(0, 120));
     } catch {}
@@ -729,13 +842,19 @@ function onChildData(session, chunk) {
     try {
       parsed = JSON.parse(line);
     } catch {
-      process.stderr.write(`[codex backend ${session.id.slice(0, 8)} stdout] ${line}\n`);
+      process.stderr.write(
+        `[codex backend ${session.id.slice(0, 8)} stdout] ${line}\n`,
+      );
       continue;
     }
-    if (!parsed || (parsed.jsonrpc !== "2.0" && parsed.jsonrpc !== undefined)) continue;
+    if (!parsed || (parsed.jsonrpc !== "2.0" && parsed.jsonrpc !== undefined))
+      continue;
     backend.outFrames.push(line);
     if (backend.outFrames.length > REPLAY_RING_SIZE) backend.outFrames.shift();
-    if (backend.attachedWs && backend.attachedWs.readyState === backend.attachedWs.OPEN) {
+    if (
+      backend.attachedWs &&
+      backend.attachedWs.readyState === backend.attachedWs.OPEN
+    ) {
       try {
         backend.attachedWs.send(line);
       } catch {}
@@ -746,13 +865,16 @@ function onChildData(session, chunk) {
 
 function upsertThreadSnapshot(session, thread) {
   if (!thread?.id) return;
-  const existing = session.threads.get(thread.id) ?? { id: thread.id, lastActive: Date.now() };
+  const existing = session.threads.get(thread.id) ?? {
+    id: thread.id,
+    lastActive: Date.now(),
+  };
   existing.id = thread.id;
   existing.name = thread.name ?? existing.name ?? thread.preview ?? thread.id;
   existing.preview = thread.preview ?? existing.preview ?? "";
   existing.status = thread.status ?? existing.status ?? "active";
   existing.archived = Boolean(thread.status === "archived");
-  existing.lastActive = (thread.updatedAt ? thread.updatedAt * 1000 : Date.now());
+  existing.lastActive = thread.updatedAt ? thread.updatedAt * 1000 : Date.now();
   session.threads.set(thread.id, existing);
 }
 
@@ -763,7 +885,10 @@ function observeForSession(session, msg) {
     if (session.backend) session.backend.outFrames = [];
     return;
   }
-  if (msg.method === "thread/name/updated" || msg.method === "thread/nameUpdated") {
+  if (
+    msg.method === "thread/name/updated" ||
+    msg.method === "thread/nameUpdated"
+  ) {
     const threadId = msg.params?.threadId;
     const name = msg.params?.threadName ?? msg.params?.name;
     if (threadId && session.threads.has(threadId)) {
@@ -819,8 +944,12 @@ function onWsMessage(session, backend, raw) {
   if (parsed.method === "turn/start" && activeId) {
     const thread = session.threads.get(activeId);
     if (thread) {
-      const prompt = (parsed.params?.input ?? []).map((part) => part?.text ?? "").join(" ").trim();
-      if (prompt && (!thread.name || thread.name === thread.id)) thread.name = prompt.slice(0, 48);
+      const prompt = (parsed.params?.input ?? [])
+        .map((part) => part?.text ?? "")
+        .join(" ")
+        .trim();
+      if (prompt && (!thread.name || thread.name === thread.id))
+        thread.name = prompt.slice(0, 48);
       thread.lastActive = Date.now();
     }
   }
@@ -841,8 +970,12 @@ server.listen(PORT, HOST, () => {
   if (hasRealBackendConfigured()) {
     console.log(`[codex-web] codex binary: ${CODEX_BIN}`);
   } else {
-    console.error("[codex-web] CODEX_BIN is not set or does not point to a valid binary.");
-    console.error("[codex-web] The web app now requires a real codex/codex-app-server backend.");
+    console.error(
+      "[codex-web] CODEX_BIN is not set or does not point to a valid binary.",
+    );
+    console.error(
+      "[codex-web] The web app now requires a real codex/codex-app-server backend.",
+    );
   }
   console.log(`[codex-web] workdir root: ${WORKDIR_ROOT}`);
 });

@@ -1,7 +1,7 @@
 # Codex Web
 
 Production-grade browser UI for the real Rust `codex app-server`, built for
-live local use and publish-ready deployment on Replit.
+live local use and public deployment on Render or Replit.
 
 <p align="center">
   <img src="./.github/codex-web-screenshot.png" alt="Codex Web screenshot" width="100%" />
@@ -22,6 +22,7 @@ Key capabilities:
 - resume, fork, archive, unarchive, rename, and rollback thread workflows
 - image attachments, inline workdir file previews, and streaming output cards
 - settings, MCP management, rate-limit/status pills, and sidebar thread filters
+- Render Blueprint plus Docker deployment path for a public URL
 - Replit workflow and Deployments support using a standalone backend binary
 
 ## Quick Start
@@ -98,10 +99,43 @@ CODEX_BIN="$HOME/codex-bin/codex-app-server" npm start
 The checked-in [`.replit`](./.replit) file already points both the workspace
 run command and Deployments build/run flow at the standalone backend path.
 
+## Render Deployment
+
+Render is the recommended public host for this repo:
+
+- it supports inbound WebSockets for the live `/ws` session bridge
+- it supports Docker-based deploys from this monorepo
+- it supports persistent disks so session workdirs and uploads survive restarts
+
+This repo now includes:
+
+- [`render.yaml`](./render.yaml) - Render Blueprint
+- [`web/Dockerfile.render`](./web/Dockerfile.render) - production image build
+- [`/healthz`](./web/server.mjs) - health endpoint for zero-downtime deploys
+
+To launch it on Render:
+
+1. Push the repo to GitHub.
+2. In Render, create a new Blueprint and point it at this repo.
+3. Accept the checked-in `render.yaml`.
+4. Let Render build and deploy the service.
+5. Open the generated `onrender.com` URL.
+
+Public Render deployments use the ChatGPT device-code flow instead of the
+localhost browser callback flow.
+
+Important:
+
+- the checked-in Blueprint uses the `starter` plan because persistent disks are
+  required for the recommended setup
+- each signed-in browser session owns a backend child process, so this is not a
+  static site and you should expect real compute usage
+
 ## Project Docs
 
 - [Web app guide](./web/README.md)
 - [Release checklist](./web/RELEASE_CHECKLIST.md)
+- [Render deployment notes](./web/README.md#render)
 - [Replit deployment notes](./replit.md)
 - [Contributing](./docs/contributing.md)
 

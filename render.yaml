@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: codex-web
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./web/Dockerfile.render
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeploy: true
+    disk:
+      name: codex-web-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CODEX_BIN
+        value: /usr/local/bin/codex-app-server
+      - key: CODEX_WEB_WORKDIR_ROOT
+        value: /var/data/workdirs
+      - key: CODEX_WEB_FILE_SIGNING_SECRET
+        generateValue: true

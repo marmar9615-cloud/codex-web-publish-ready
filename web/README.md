@@ -6,6 +6,38 @@ Replit deployment all require a real `codex` or `codex-app-server` binary.
 
 Release criteria live in [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md).
 
+## Render
+
+Render is the recommended public host for this app. The repo includes:
+
+- [`../render.yaml`](../render.yaml) for Blueprint-based setup
+- [`Dockerfile.render`](./Dockerfile.render) for the production image build
+- `GET /healthz` for Render health checks
+
+Why Render fits this app:
+
+- the gateway is a long-lived Node service, not a static or serverless app
+- browser sessions depend on a real WebSocket connection to `/ws`
+- the app benefits from persistent disk storage for session workdirs and uploads
+
+Launch flow:
+
+1. Push the repo to GitHub.
+2. In Render, create a new Blueprint from the repo.
+3. Accept the checked-in `render.yaml`.
+4. Wait for the Docker build to finish.
+5. Open the generated public `onrender.com` URL.
+
+The checked-in Blueprint uses:
+
+- `starter` plan
+- a 5 GB persistent disk mounted at `/var/data`
+- `CODEX_WEB_WORKDIR_ROOT=/var/data/workdirs`
+- a generated `CODEX_WEB_FILE_SIGNING_SECRET`
+
+Public Render deployments use the ChatGPT device-code auth path. Localhost keeps
+the browser callback flow.
+
 ## Quickstart
 
 Local with the installed multitool binary:
@@ -138,3 +170,12 @@ CODEX_BIN="$HOME/codex-bin/codex-app-server" npm start
 
 Public Replit deployments use the device-code auth flow. Localhost keeps the
 browser callback flow.
+
+## Public-hosting notes
+
+- This app is stateful and compute-backed. It is not a good fit for static
+  hosts like GitHub Pages, Netlify static hosting, or Vercel static/serverless.
+- Every active browser session owns a backend child process, so anonymous
+  public access can create real usage and cost.
+- If you want a quick temporary demo instead of a hosted service, a Cloudflare
+  Tunnel is the fastest option, but Render is the better always-on choice.

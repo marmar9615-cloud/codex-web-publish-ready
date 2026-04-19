@@ -1,0 +1,16 @@
+.git
+.github
+.local
+.playwright-cli
+attached_assets
+
+node_modules
+codex-cli/node_modules
+web/node_modules
+
+codex-rs/target
+web/.workdirs
+web/test-results
+
+.DS_Store
+Thumbs.db
