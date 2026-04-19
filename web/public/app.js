@@ -91,6 +91,7 @@ const modals = createModals({
   rpcCall: rpc.rpcCall,
   rpcRaw: rpc.rpcRaw,
   rpcReply: rpc.rpcReply,
+  refreshModels,
   refreshWhoAmI,
   refreshAccount,
   refreshConfigState,
@@ -104,6 +105,7 @@ const modals = createModals({
 notificationHandlers = createNotificationHandlers({
   rpcReply: rpc.rpcReply,
   rpcRaw: rpc.rpcRaw,
+  refreshModels,
   refreshWhoAmI,
   refreshAccount,
   renderAccount: renderers.renderAccount,
@@ -852,6 +854,7 @@ async function doLogout() {
   await fetch("/api/logout", { method: "POST" });
   renderers.clearAuthRequiredCard();
   await refreshWhoAmI();
+  await refreshModels().catch(() => {});
   updateStatusBar();
   renderers.appendSystem("Signed out.");
 }

@@ -7,6 +7,11 @@ test.describe("Codex Web — live settings and MCP", () => {
 
     await page.locator("#settings-btn").click();
     await expect(page.locator(".modal h2")).toContainText("Settings");
+    await expect
+      .poll(
+        async () => await page.locator('.modal select[name="model"] option').count(),
+      )
+      .toBeGreaterThan(0);
     await page.getByRole("button", { name: "MCP" }).click();
     await page.locator("#open-mcp").click();
     await expect(page.locator(".modal h2")).toContainText("MCP servers");

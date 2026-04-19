@@ -19,6 +19,7 @@ function mapDecision(uiDecision) {
 export function createNotificationHandlers({
   rpcReply,
   rpcRaw,
+  refreshModels,
   refreshWhoAmI,
   refreshAccount,
   renderAccount,
@@ -307,6 +308,7 @@ export function createNotificationHandlers({
         renderAccount();
         renderAccountPill();
         updateStatusBar();
+        void refreshModels().catch(() => {});
         if (hasOauth) {
           clearAuthRequiredCard();
           appendSystem(

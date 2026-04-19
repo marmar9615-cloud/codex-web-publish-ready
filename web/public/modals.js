@@ -5,6 +5,7 @@ export function createModals({
   rpcCall,
   rpcRaw,
   rpcReply,
+  refreshModels,
   refreshWhoAmI,
   refreshAccount,
   refreshConfigState,
@@ -275,6 +276,7 @@ export function createModals({
                 clearAuthRequiredCard();
                 closeModal();
                 await refreshAccount().catch(() => {});
+                await refreshModels().catch(() => {});
               };
               window.addEventListener("codex:signedIn", onSignedIn, {
                 once: true,
@@ -302,6 +304,7 @@ export function createModals({
                 clearAuthRequiredCard();
                 closeModal();
                 await refreshAccount().catch(() => {});
+                await refreshModels().catch(() => {});
                 appendSystem("Signed in with ChatGPT.");
                 return;
               }
@@ -332,6 +335,7 @@ export function createModals({
           if (response.ok) {
             await refreshWhoAmI();
             await refreshAccount().catch(() => {});
+            await refreshModels().catch(() => {});
             updateStatusBar();
             clearAuthRequiredCard();
             appendSystem("Signed in with API key.");
@@ -508,17 +512,32 @@ export function createModals({
     `;
   }
 
-  function openSettings(focus) {
+  async function openSettings(focus) {
+    if (state.initialized && !state.models.length) {
+      await refreshModels().catch(() => {});
+    }
+
     const settings = state.settings;
     const config = state.configSnapshot?.config ?? {};
     const configLayers = state.configSnapshot?.layers ?? [];
     const requirements = state.configRequirements?.requirements ?? null;
-    const modelOptions = state.models
-      .map((model) => {
+    const models = [...state.models];
+    if (
+      settings.model &&
+      !models.some((model) => {
         const id = model.id ?? model.slug ?? model.model;
-        return `<option value="${escapeHtml(id)}" ${settings.model === id ? "selected" : ""}>${escapeHtml(id)}</option>`;
+        return id === settings.model;
       })
-      .join("");
+    ) {
+      models.unshift({ id: settings.model });
+    }
+    const modelOptions = (models.length
+      ? models.map((model) => {
+          const id = model.id ?? model.slug ?? model.model;
+          return `<option value="${escapeHtml(id)}" ${settings.model === id ? "selected" : ""}>${escapeHtml(id)}</option>`;
+        })
+      : ['<option value="">No models available</option>']
+    ).join("");
     const select = (name, options) =>
       `<select name="${name}">${options.map((option) => `<option value="${option}" ${settings[name] === option ? "selected" : ""}>${option}</option>`).join("")}</select>`;
     const tabs = [
@@ -558,7 +577,7 @@ export function createModals({
       ${panel(
         "model",
         `
-        <div class="modal-row"><label>Model</label><select name="model">${modelOptions}</select></div>
+        <div class="modal-row"><label>Model</label><select name="model" ${models.length ? "" : "disabled"}>${modelOptions}</select></div>
         <div class="modal-row"><label>Server working directory</label><input value="${escapeHtml(state.whoami?.workdir ?? "")}" disabled /></div>
       `,
         tabForFocus !== "model",
