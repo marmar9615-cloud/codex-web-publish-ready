@@ -56,6 +56,8 @@ const renderers = createRenderers({
   openThread: (threadId) => void openThread(threadId),
   onThreadAction: (action, thread) => handleThreadAction(action, thread),
   onRollbackToItem: (itemId) => rollbackToItem(itemId),
+  onEditItem: (itemId) => void editAndResendItem(itemId),
+  onForkFromItem: (itemId) => void forkFromItem(itemId),
   openLogin: () => modals.openLogin(),
   scrollToBottom,
   hydrateWorkdirMedia,
@@ -550,6 +552,70 @@ async function rollbackToItem(itemId) {
     return;
   }
   await rollbackTurns(numTurns);
+}
+
+function getUserMessageText(itemId) {
+  const entry = state.itemsById.get(itemId);
+  const item = entry?.item;
+  if (!item || item.type !== "userMessage") return "";
+  return (item.content ?? [])
+    .filter((part) => part?.type === "text")
+    .map((part) => part.text ?? "")
+    .join("\n");
+}
+
+async function editAndResendItem(itemId) {
+  const text = getUserMessageText(itemId);
+  await rollbackToItem(itemId);
+  const input = $("#input");
+  if (!input) return;
+  input.value = text;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.focus();
+  try {
+    input.setSelectionRange(input.value.length, input.value.length);
+  } catch {}
+}
+
+async function forkFromItem(itemId) {
+  if (!state.activeThreadId) return;
+  const turnIndex = state.itemTurnIndex.get(itemId);
+  if (turnIndex == null) {
+    renderers.appendSystem(
+      "Could not determine the turn to fork from.",
+      "error",
+    );
+    return;
+  }
+  const turnsToDrop = Math.max(0, state.turns.length - turnIndex - 1);
+  try {
+    const result = await rpc.rpcCall("thread/fork", {
+      threadId: state.activeThreadId,
+      persistExtendedHistory: true,
+    });
+    const nextThread = result?.thread ?? result;
+    if (!nextThread?.id) {
+      renderers.appendSystem("fork failed: no thread returned", "error");
+      return;
+    }
+    await openThread(nextThread.id);
+    if (turnsToDrop > 0) {
+      await rpc
+        .rpcCall("thread/rollback", {
+          threadId: nextThread.id,
+          numTurns: turnsToDrop,
+        })
+        .catch((error) =>
+          renderers.appendSystem(
+            `fork rollback failed: ${error.message}`,
+            "error",
+          ),
+        );
+    }
+    renderers.appendSystem("Forked thread from this point.");
+  } catch (error) {
+    renderers.appendSystem(`fork failed: ${error.message}`, "error");
+  }
 }
 
 async function handleThreadAction(action, thread) {

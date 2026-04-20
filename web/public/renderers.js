@@ -11,6 +11,8 @@ export function createRenderers({
   openThread,
   onThreadAction,
   onRollbackToItem,
+  onEditItem,
+  onForkFromItem,
   openLogin,
   scrollToBottom,
   hydrateWorkdirMedia,
@@ -219,17 +221,42 @@ export function createRenderers({
     bubble.innerHTML = parts.join("");
     const turnIndex = state.itemTurnIndex.get(item.id);
     if (turnIndex != null && turnIndex >= 0) {
-      const rollback = el("button", {
-        class: "rollback-chip ghost",
-        type: "button",
-        title: "Rollback from this turn",
-      });
-      rollback.textContent = "Rollback to here";
-      rollback.addEventListener("click", (event) => {
-        event.stopPropagation();
-        void onRollbackToItem(item.id);
-      });
-      bubble.appendChild(rollback);
+      const tools = el("div", { class: "msg-tools" });
+      const makeBtn = (label, title, handler) => {
+        const btn = el("button", {
+          class: "msg-tool ghost",
+          type: "button",
+          title,
+        });
+        btn.textContent = label;
+        btn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          handler();
+        });
+        return btn;
+      };
+      if (onEditItem) {
+        tools.appendChild(
+          makeBtn("Edit", "Edit this message and resend", () =>
+            onEditItem(item.id),
+          ),
+        );
+      }
+      if (onForkFromItem) {
+        tools.appendChild(
+          makeBtn(
+            "Fork",
+            "Fork the thread at this point into a new conversation",
+            () => onForkFromItem(item.id),
+          ),
+        );
+      }
+      tools.appendChild(
+        makeBtn("Rollback", "Drop later turns and keep this one", () =>
+          onRollbackToItem(item.id),
+        ),
+      );
+      bubble.appendChild(tools);
     }
     cell.appendChild(bubble);
     hydrateWorkdirMedia(cell);
