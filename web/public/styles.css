@@ -342,7 +342,31 @@ body.workspace-collapsed #app {
 .sidebar-filters {
   display: flex;
   gap: 6px;
-  padding: 2px 12px 10px;
+  padding: 2px 12px 6px;
+}
+.sidebar-search {
+  padding: 0 12px 10px;
+}
+.sidebar-search input {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background var(--dur-1) var(--ease-out);
+}
+.sidebar-search input::placeholder {
+  color: var(--muted);
+}
+.sidebar-search input:focus {
+  outline: none;
+  border-color: rgba(127, 168, 255, 0.45);
+  background: var(--bg-elevated);
 }
 .sidebar-section {
   padding: 0 8px 8px;

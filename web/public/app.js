@@ -891,6 +891,10 @@ function bindUi() {
     state.filterArchived = true;
     renderers.renderThreads();
   });
+  $("#thread-search")?.addEventListener("input", (event) => {
+    state.threadSearchQuery = event.target.value ?? "";
+    renderers.renderThreads();
+  });
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".thread-actions") && state.threadMenuOpenId) {
       state.threadMenuOpenId = null;

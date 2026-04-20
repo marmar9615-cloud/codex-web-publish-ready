@@ -21,6 +21,7 @@ export const state = {
   plan: null,
   threads: [],
   filterArchived: false,
+  threadSearchQuery: "",
   activeThreadId: null,
   activeTurnId: null,
   currentTurnRecordId: null,

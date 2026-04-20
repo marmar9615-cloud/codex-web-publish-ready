@@ -111,11 +111,21 @@ export function createRenderers({
       "active",
       state.filterArchived,
     );
-    const threads = state.threads.filter(
-      (thread) => Boolean(thread.archived) === state.filterArchived,
-    );
+    const query = (state.threadSearchQuery ?? "").trim().toLowerCase();
+    const threads = state.threads.filter((thread) => {
+      if (Boolean(thread.archived) !== state.filterArchived) return false;
+      if (!query) return true;
+      const haystack = [thread.name, thread.preview, thread.id]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
     if (threads.length === 0) {
-      nav.innerHTML = `<div class="muted thread-empty">No ${state.filterArchived ? "archived" : "saved"} threads yet.</div>`;
+      const empty = query
+        ? `No ${state.filterArchived ? "archived" : "saved"} threads match "${escapeHtml(query)}".`
+        : `No ${state.filterArchived ? "archived" : "saved"} threads yet.`;
+      nav.innerHTML = `<div class="muted thread-empty">${empty}</div>`;
       return;
     }
     for (const thread of threads) {
