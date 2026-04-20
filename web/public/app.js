@@ -895,6 +895,9 @@ function bindUi() {
     state.threadSearchQuery = event.target.value ?? "";
     renderers.renderThreads();
   });
+  $("#model-pill")?.addEventListener("click", () => {
+    modals.openModelPickerModal();
+  });
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".thread-actions") && state.threadMenuOpenId) {
       state.threadMenuOpenId = null;

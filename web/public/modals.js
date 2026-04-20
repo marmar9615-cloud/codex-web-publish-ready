@@ -83,6 +83,67 @@ export function createModals({
     );
   }
 
+  function openModelPickerModal() {
+    const models = Array.isArray(state.models) ? state.models : [];
+    const current = state.settings?.model ?? "";
+    if (!models.length) {
+      modal(
+        `
+        <h2>Pick a model</h2>
+        <p class="settings-copy">The backend hasn't returned a model list yet. Sign in and wait for the connection, or open Settings to configure one.</p>
+        <div class="modal-actions">
+          <button id="close" class="primary">Close</button>
+        </div>
+      `,
+        (mount) => {
+          mount.querySelector("#close").addEventListener("click", closeModal);
+        },
+      );
+      return;
+    }
+    const rows = models
+      .map((model) => {
+        const slug = model.id ?? model.slug ?? model.model ?? "";
+        const name = model.name ?? model.title ?? slug;
+        const desc = model.description ?? "";
+        return `
+          <button type="button" class="model-row${slug === current ? " active" : ""}" data-model-slug="${escapeHtml(slug)}">
+            <div class="model-row-main">
+              <strong>${escapeHtml(name)}</strong>
+              ${slug && slug !== name ? `<span class="model-row-slug">${escapeHtml(slug)}</span>` : ""}
+            </div>
+            ${desc ? `<div class="model-row-desc">${escapeHtml(desc)}</div>` : ""}
+          </button>
+        `;
+      })
+      .join("");
+    modal(
+      `
+      <h2>Pick a model</h2>
+      <p class="settings-copy">Applies to new turns on the active thread. Reasoning effort and other settings stay as configured.</p>
+      <div class="model-list">${rows}</div>
+      <div class="modal-actions">
+        <button id="close" class="primary">Close</button>
+      </div>
+    `,
+      (mount) => {
+        mount.querySelector("#close").addEventListener("click", closeModal);
+        mount.querySelectorAll("[data-model-slug]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const slug = btn.dataset.modelSlug ?? "";
+            if (!slug) return;
+            state.settings.model = slug;
+            save("settings", state.settings);
+            updateStatusBar();
+            closeModal();
+            appendSystem(`Model set to ${slug}.`);
+            await pushSettingsToBackend().catch(() => {});
+          });
+        });
+      },
+    );
+  }
+
   function openShortcutsModal() {
     const rows = [
       ["Enter", "Send the current message"],
@@ -2640,6 +2701,7 @@ export function createModals({
     openAppsModal,
     openMcpModal,
     openPermissionsModal,
+    openModelPickerModal,
     openPluginsModal,
     openProjectToolsModal,
     openSettings,
