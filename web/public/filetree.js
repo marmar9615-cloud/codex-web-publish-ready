@@ -336,10 +336,14 @@ export function createFileTree({ rpcCall, appendSystem }) {
           }
           expandedDirectories.add(path);
           renderTree();
+          let loadFailed = false;
           await loadDirectory(path).catch((error) => {
+            loadFailed = true;
+            expandedDirectories.delete(path);
             appendSystem(`file tree load failed: ${error.message}`, "error");
           });
           renderTree();
+          if (loadFailed) return;
           return;
         }
         await openFile(path);

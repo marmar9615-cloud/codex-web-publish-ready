@@ -192,9 +192,8 @@ export function createTestRunner({ rpcCall, appendSystem }) {
   }
 
   function init() {
-    $("#workspace-run-tests-btn")?.addEventListener("click", () => {
-      void runDetectedTests();
-    });
+    // The live Run button is bound inside render() with the correct id.
+    // The click handler here is redundant and targeted a non-existent element.
     render();
   }
 

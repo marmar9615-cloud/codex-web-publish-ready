@@ -130,11 +130,27 @@ export function createLivePreview({ appendSystem }) {
       previewUi.path = normalizePath(event.target.value);
       persistUi();
     });
-    $("#workspace-preview-load")?.addEventListener("click", () => {
-      void activate();
+    $("#workspace-preview-load")?.addEventListener("click", async () => {
+      const button = $("#workspace-preview-load");
+      if (button) button.disabled = true;
+      try {
+        await activate();
+      } catch (error) {
+        appendSystem(`preview activation failed: ${error.message}`, "error");
+      } finally {
+        if (button) button.disabled = false;
+      }
     });
-    $("#workspace-preview-detect")?.addEventListener("click", () => {
-      void refreshPorts();
+    $("#workspace-preview-detect")?.addEventListener("click", async () => {
+      const button = $("#workspace-preview-detect");
+      if (button) button.disabled = true;
+      try {
+        await refreshPorts();
+      } catch (error) {
+        appendSystem(`preview detection failed: ${error.message}`, "error");
+      } finally {
+        if (button) button.disabled = false;
+      }
     });
     $("#workspace-preview-reload")?.addEventListener("click", () => {
       render();

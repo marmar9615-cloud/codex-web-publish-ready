@@ -64,6 +64,11 @@ export function createTerminal({ appendSystem }) {
   function render() {
     const root = host();
     if (!root) return;
+    const previousInput = root.querySelector("#workspace-terminal-input");
+    const pendingValue = previousInput?.value ?? "";
+    const pendingSelectionStart = previousInput?.selectionStart ?? null;
+    const pendingSelectionEnd = previousInput?.selectionEnd ?? null;
+    const hadFocus = previousInput && document.activeElement === previousInput;
     root.innerHTML = `
       <div class="workspace-runner-head">
         <div>
@@ -121,6 +126,18 @@ export function createTerminal({ appendSystem }) {
       output = "";
       render();
     });
+    const input = $("#workspace-terminal-input");
+    if (input && pendingValue) {
+      input.value = pendingValue;
+      if (pendingSelectionStart != null && pendingSelectionEnd != null) {
+        try {
+          input.setSelectionRange(pendingSelectionStart, pendingSelectionEnd);
+        } catch {}
+      }
+    }
+    if (hadFocus && input) {
+      input.focus();
+    }
   }
 
   async function submit() {

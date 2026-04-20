@@ -82,4 +82,12 @@ async function loadShare() {
   }
 }
 
-void loadShare();
+void loadShare().catch((error) => {
+  const message =
+    error instanceof Error && error.message ? error.message : "Could not load share.";
+  const titleNode = $("#share-title");
+  if (titleNode) titleNode.textContent = "Shared thread unavailable";
+  const metaNode = $("#share-meta");
+  if (metaNode) metaNode.textContent = "";
+  showStatus(message, "error");
+});

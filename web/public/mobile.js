@@ -143,14 +143,38 @@ export function createMobilePreview({ appendSystem }) {
           `
       }
     `;
-    $("#workspace-mobile-refresh")?.addEventListener("click", () => {
-      void fetchStatus();
+    $("#workspace-mobile-refresh")?.addEventListener("click", async () => {
+      const button = $("#workspace-mobile-refresh");
+      if (button) button.disabled = true;
+      try {
+        await fetchStatus();
+      } catch (error) {
+        appendSystem(`mobile preview refresh failed: ${error.message}`, "error");
+      } finally {
+        if (button) button.disabled = false;
+      }
     });
-    $("#workspace-mobile-start")?.addEventListener("click", () => {
-      void start();
+    $("#workspace-mobile-start")?.addEventListener("click", async () => {
+      const button = $("#workspace-mobile-start");
+      if (button) button.disabled = true;
+      try {
+        await start();
+      } catch (error) {
+        appendSystem(`mobile preview start failed: ${error.message}`, "error");
+      } finally {
+        if (button) button.disabled = false;
+      }
     });
-    $("#workspace-mobile-stop")?.addEventListener("click", () => {
-      void stop();
+    $("#workspace-mobile-stop")?.addEventListener("click", async () => {
+      const button = $("#workspace-mobile-stop");
+      if (button) button.disabled = true;
+      try {
+        await stop();
+      } catch (error) {
+        appendSystem(`mobile preview stop failed: ${error.message}`, "error");
+      } finally {
+        if (button) button.disabled = false;
+      }
     });
   }
 

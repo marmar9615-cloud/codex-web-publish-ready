@@ -282,6 +282,14 @@ export function createSubagentPane({ rpcCall, openThread, appendSystem }) {
         void refresh();
       }
     });
+    // Retry ensureDetail whenever the RPC socket becomes ready again — otherwise
+    // the first load leaves the detail pane stuck on "event stream not loaded".
+    window.addEventListener("codex:ready", () => {
+      const selected = subagentUi.selectedThreadId;
+      if (selected && subagentUi.visible) {
+        void ensureDetail(selected);
+      }
+    });
     render();
   }
 
