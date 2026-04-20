@@ -106,6 +106,10 @@
           <div id="autocomplete" hidden></div>
           <div class="composer-shell">
             <div id="pending-uploads" hidden></div>
+            <div id="composer-plan-banner" class="composer-plan-banner" hidden>
+              <span class="composer-plan-label">Plan mode</span>
+              <span>Codex will stay in planning mode for this turn and return a proposed plan before acting.</span>
+            </div>
             <textarea id="input"
               rows="1"
               aria-label="Message Codex"
@@ -124,6 +128,9 @@
                 <kbd>esc</kbd> cancel
               </span>
               <div>
+                <button type="button" id="plan-mode-toggle" class="ghost" aria-pressed="false">
+                  Plan mode
+                </button>
                 <input id="attach-input" type="file" accept="image/*" hidden />
                 <button type="button" id="attach-btn" class="ghost" title="Attach image">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:4px">

@@ -49,6 +49,9 @@ export const state = {
     modelReasoningEffort: "medium",
     webSearchMode: "disabled",
   }),
+  composerFlags: load("composerFlags", {
+    planMode: false,
+  }),
   slashCommands: [
     { name: "/new", desc: "Start a fresh conversation" },
     { name: "/resume", desc: "Resume a previous thread from the sidebar" },

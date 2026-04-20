@@ -58,6 +58,30 @@ function updateStatusBar() {
   $("#sandbox-pill").textContent = `sandbox: ${state.settings.sandboxMode}`;
 }
 
+function persistComposerFlags() {
+  save("composerFlags", state.composerFlags);
+}
+
+function renderComposerMode() {
+  const enabled = Boolean(state.composerFlags.planMode);
+  const button = $("#plan-mode-toggle");
+  if (button) {
+    button.setAttribute("aria-pressed", enabled ? "true" : "false");
+    button.classList.toggle("primary", enabled);
+    button.classList.toggle("ghost", !enabled);
+  }
+  const banner = $("#composer-plan-banner");
+  if (banner) {
+    banner.hidden = !enabled;
+  }
+}
+
+function setPlanMode(enabled) {
+  state.composerFlags.planMode = Boolean(enabled);
+  persistComposerFlags();
+  renderComposerMode();
+}
+
 const renderers = createRenderers({
   openThread: (threadId) => void openThread(threadId),
   onThreadAction: (action, thread) => handleThreadAction(action, thread),
@@ -193,6 +217,7 @@ async function bootstrap() {
   await refreshProjects();
   await refreshThreads();
   bindUi();
+  renderComposerMode();
   fileTree.init();
   livePreview.init();
   mobilePreview.init();
@@ -821,6 +846,9 @@ function bindUi() {
   $("#workspace-ship-btn")?.addEventListener("click", () => {
     void modals.openProjectToolsModal("ship");
   });
+  $("#plan-mode-toggle")?.addEventListener("click", () => {
+    setPlanMode(!state.composerFlags.planMode);
+  });
   $("#new-project-btn")?.addEventListener("click", () => {
     void createProject();
   });
@@ -1109,6 +1137,23 @@ function onSubmit(event) {
   autoGrowReset(input);
 }
 
+function selectedModelId() {
+  if (state.settings.model) return state.settings.model;
+  const pick = state.models.find((model) => model.isDefault) ?? state.models[0];
+  return modelSlug(pick) || "gpt-5";
+}
+
+function buildCollaborationMode() {
+  return {
+    mode: state.composerFlags.planMode ? "plan" : "default",
+    settings: {
+      model: selectedModelId(),
+      reasoning_effort: state.settings.modelReasoningEffort || null,
+      developer_instructions: null,
+    },
+  };
+}
+
 async function startTurn(text) {
   setInFlight(true);
   try {
@@ -1136,6 +1181,7 @@ async function startTurn(text) {
     await rpc.rpcCall("turn/start", {
       threadId,
       input,
+      collaborationMode: buildCollaborationMode(),
     });
     state.pendingUploads = [];
     uploads.renderPendingUploads();
