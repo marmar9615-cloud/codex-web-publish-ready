@@ -1065,7 +1065,7 @@ function bindUi() {
     }
     if (key === "k" && !event.shiftKey && !modalOpen) {
       event.preventDefault();
-      focusComposerAndOpenSlash();
+      openCommandPalette();
       return;
     }
   });
@@ -1127,6 +1127,291 @@ function focusComposerAndOpenSlash() {
     input.value = "/";
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
+}
+
+function buildPaletteActions() {
+  const actions = [];
+  for (const entry of state.slashCommands ?? []) {
+    if (entry.disabled || entry.cliOnly) continue;
+    actions.push({
+      id: `slash:${entry.name}`,
+      label: entry.name,
+      hint: entry.desc ?? "",
+      group: "Slash",
+      run: () => {
+        handleSlash(entry.name);
+      },
+    });
+  }
+  actions.push(
+    {
+      id: "ui:new-thread",
+      label: "New thread",
+      hint: "Start a fresh conversation",
+      group: "Navigate",
+      run: () => newThread(),
+    },
+    {
+      id: "ui:toggle-sidebar",
+      label: "Toggle sidebar",
+      hint: "Show or hide the thread sidebar (⌘B)",
+      group: "View",
+      run: () => toggleSidebar(),
+    },
+    {
+      id: "ui:toggle-workspace",
+      label: "Toggle workspace panel",
+      hint: "Show or hide the file tree and tools pane",
+      group: "View",
+      run: () => {
+        $("#workspace-toggle-btn")?.click();
+      },
+    },
+    {
+      id: "ui:settings",
+      label: "Open settings",
+      hint: "Manage hooks, models, policies (⌘,)",
+      group: "Open",
+      run: () => modals.openSettings(),
+    },
+    {
+      id: "ui:shortcuts",
+      label: "Keyboard shortcuts",
+      hint: "See every shortcut",
+      group: "Open",
+      run: () => modals.openShortcutsModal?.(),
+    },
+    {
+      id: "ui:mcp",
+      label: "MCP servers",
+      hint: "Connect and manage MCP servers",
+      group: "Open",
+      run: () => modals.openMcpModal(),
+    },
+    {
+      id: "ui:skills",
+      label: "Skills",
+      hint: "Enable or disable skills",
+      group: "Open",
+      run: () => modals.openSkillsModal(),
+    },
+    {
+      id: "ui:plugins",
+      label: "Plugins",
+      hint: "Manage installed plugins",
+      group: "Open",
+      run: () => modals.openPluginsModal(),
+    },
+    {
+      id: "ui:apps",
+      label: "Apps",
+      hint: "Browse installed apps",
+      group: "Open",
+      run: () => modals.openAppsModal(),
+    },
+    {
+      id: "ui:deploy",
+      label: "Deploy…",
+      hint: "Manage connected deploy providers",
+      group: "Open",
+      run: () => void modals.openProjectToolsModal?.("deploy"),
+    },
+    {
+      id: "ui:github",
+      label: "GitHub…",
+      hint: "Connect GitHub, clone, commit, push, or open a PR",
+      group: "Open",
+      run: () => void modals.openProjectToolsModal?.("git"),
+    },
+    {
+      id: "ui:export-thread",
+      label: "Export current thread",
+      hint: "Download this thread as JSON",
+      group: "Thread",
+      run: () => {
+        if (!state.activeThreadId) {
+          renderers.appendSystem("No active thread to export.", "error");
+          return;
+        }
+        void handleThreadAction("export", {
+          id: state.activeThreadId,
+          name: $("#thread-title")?.textContent ?? state.activeThreadId,
+        });
+      },
+    },
+  );
+  return actions.filter((action) => typeof action.run === "function");
+}
+
+function fuzzyScore(query, text) {
+  if (!query) return 1;
+  const needle = query.toLowerCase();
+  const haystack = text.toLowerCase();
+  if (haystack.includes(needle)) return 3 - haystack.indexOf(needle) / 100;
+  let index = 0;
+  for (const char of needle) {
+    const next = haystack.indexOf(char, index);
+    if (next === -1) return 0;
+    index = next + 1;
+  }
+  return 1;
+}
+
+function renderPaletteList(mount, actions, query, selectedIndex) {
+  const list = mount.querySelector("#palette-list");
+  if (!list) return;
+  const scored = actions
+    .map((action) => ({
+      action,
+      score: Math.max(
+        fuzzyScore(query, action.label),
+        fuzzyScore(query, action.hint ?? ""),
+        fuzzyScore(query, action.group ?? ""),
+      ),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 40);
+  if (scored.length === 0) {
+    list.innerHTML = '<div class="palette-empty">No matches</div>';
+    return;
+  }
+  const normalizedIndex =
+    ((selectedIndex % scored.length) + scored.length) % scored.length;
+  list.innerHTML = scored
+    .map(
+      (entry, index) => `
+        <button
+          type="button"
+          class="palette-item${index === normalizedIndex ? " active" : ""}"
+          data-action-id="${entry.action.id}"
+        >
+          <div class="palette-item-main">
+            <span class="palette-item-label">${escapeHtmlPalette(entry.action.label)}</span>
+            <span class="palette-item-hint">${escapeHtmlPalette(entry.action.hint ?? "")}</span>
+          </div>
+          <span class="palette-item-group">${escapeHtmlPalette(entry.action.group ?? "")}</span>
+        </button>
+      `,
+    )
+    .join("");
+  list.dataset.matchCount = String(scored.length);
+  list.dataset.selectedIndex = String(normalizedIndex);
+}
+
+function escapeHtmlPalette(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function openCommandPalette() {
+  const actions = buildPaletteActions();
+  const root = $("#modal-root");
+  if (!root) return;
+  root.innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal palette-modal" role="dialog" aria-label="Command palette">
+        <input
+          id="palette-input"
+          type="text"
+          class="palette-input"
+          placeholder="Type a command or action…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div id="palette-list" class="palette-list"></div>
+        <div class="palette-footer">
+          <span>↑↓ navigate</span>
+          <span>↵ run</span>
+          <span>esc close</span>
+        </div>
+      </div>
+    </div>
+  `;
+  const backdrop = root.querySelector(".modal-backdrop");
+  const mount = root.querySelector(".palette-modal");
+  const input = root.querySelector("#palette-input");
+  const list = root.querySelector("#palette-list");
+  let query = "";
+  let selectedIndex = 0;
+
+  const close = () => {
+    root.innerHTML = "";
+  };
+
+  const execSelected = () => {
+    const selected = list.querySelector(".palette-item.active");
+    if (!selected) return;
+    const id = selected.dataset.actionId;
+    const action = actions.find((entry) => entry.id === id);
+    if (!action) return;
+    close();
+    try {
+      action.run();
+    } catch (error) {
+      renderers.appendSystem(
+        `command failed: ${error.message ?? error}`,
+        "error",
+      );
+    }
+  };
+
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) close();
+  });
+
+  input.addEventListener("input", () => {
+    query = input.value;
+    selectedIndex = 0;
+    renderPaletteList(mount, actions, query, selectedIndex);
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      execSelected();
+      return;
+    }
+    const matchCount = Number(list.dataset.matchCount ?? 0);
+    if (matchCount === 0) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      selectedIndex = (selectedIndex + 1) % matchCount;
+      renderPaletteList(mount, actions, query, selectedIndex);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      selectedIndex = (selectedIndex - 1 + matchCount) % matchCount;
+      renderPaletteList(mount, actions, query, selectedIndex);
+    }
+  });
+
+  list.addEventListener("click", (event) => {
+    const target = event.target.closest(".palette-item");
+    if (!target) return;
+    const id = target.dataset.actionId;
+    const action = actions.find((entry) => entry.id === id);
+    if (!action) return;
+    close();
+    try {
+      action.run();
+    } catch (error) {
+      renderers.appendSystem(
+        `command failed: ${error.message ?? error}`,
+        "error",
+      );
+    }
+  });
+
+  renderPaletteList(mount, actions, query, selectedIndex);
+  setTimeout(() => input.focus(), 10);
 }
 
 async function createProject() {

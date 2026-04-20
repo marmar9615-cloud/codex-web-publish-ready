@@ -156,7 +156,7 @@ export function createModals({
       ["↑ / ↓", "Navigate autocomplete suggestions"],
       ["Tab", "Accept the highlighted autocomplete item"],
       ["?", "Show this shortcuts reference"],
-      [`${mod} + K`, "Focus the composer and open slash commands"],
+      [`${mod} + K`, "Open the command palette (search actions and commands)"],
       [`${mod} + N`, "Start a new thread"],
       [`${mod} + B`, "Toggle the sidebar"],
       [`${mod} + ,`, "Open settings"],
