@@ -42,6 +42,9 @@ const WORKDIR_ROOT = resolve(
 const PROJECTS_ROOT = resolve(
   process.env.CODEX_WEB_PROJECTS_ROOT ?? join(dirname(WORKDIR_ROOT), "projects"),
 );
+const SHARES_ROOT = resolve(
+  process.env.CODEX_WEB_SHARES_ROOT ?? join(dirname(WORKDIR_ROOT), "shares"),
+);
 const CODEX_BIN = process.env.CODEX_BIN ?? "";
 const IS_PROD = process.env.NODE_ENV === "production";
 const PROJECT_METADATA_FILE = ".codex-project.json";
@@ -56,6 +59,8 @@ const COMMAND_TIMEOUT_MS = 15 * 60 * 1000;
 const SHIP_OUTPUT_LIMIT = 12_000;
 const GITHUB_API_ROOT = "https://api.github.com";
 const TERMINAL_REPLAY_RING_SIZE = 400;
+const SHARE_DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60;
+const SHARE_MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const CHATGPT_ISSUER = (
   process.env.CODEX_CHATGPT_ISSUER ?? "https://auth.openai.com"
@@ -67,6 +72,7 @@ const CHATGPT_DEVICE_REDIRECT_URI = `${CHATGPT_ISSUER}/deviceauth/callback`;
 
 mkdirSync(WORKDIR_ROOT, { recursive: true });
 mkdirSync(PROJECTS_ROOT, { recursive: true });
+mkdirSync(SHARES_ROOT, { recursive: true });
 
 // -------- session store (in-memory) --------
 // session: {
@@ -132,6 +138,10 @@ const DEVICE_CODE_TIMEOUT_MS = 15 * 60 * 1000;
 const PREVIEW_URL_TTL_SECONDS = 15 * 60;
 const FILE_SIGNING_SECRET =
   process.env.CODEX_WEB_FILE_SIGNING_SECRET ?? randomBytes(32).toString("hex");
+const SHARE_SIGNING_SECRET =
+  process.env.CODEX_WEB_SHARE_SIGNING_SECRET ??
+  process.env.CODEX_WEB_SECRETS_KEY ??
+  randomBytes(32).toString("hex");
 const MEMORY_DOC_FILENAMES = ["AGENTS.override.md", "AGENTS.md", "CLAUDE.md"];
 
 function isSecureRequest(req) {
@@ -232,6 +242,80 @@ function hasValidPreviewSignature(session, filePath, expires, sig) {
     );
   } catch {
     return false;
+  }
+}
+
+function shareRecordPath(recordId) {
+  return join(SHARES_ROOT, `${recordId}.json`);
+}
+
+function clampShareTtl(ttl) {
+  const parsed = Number.parseInt(String(ttl ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return SHARE_DEFAULT_TTL_SECONDS;
+  }
+  return Math.min(SHARE_MAX_TTL_SECONDS, Math.max(60, parsed));
+}
+
+function signShareToken(recordId, expiresAt) {
+  return createHmac("sha256", SHARE_SIGNING_SECRET)
+    .update(`${recordId}:${expiresAt}`)
+    .digest("hex");
+}
+
+function buildShareToken(recordId, expiresAt) {
+  const signature = signShareToken(recordId, expiresAt);
+  return `${recordId}.${expiresAt}.${signature}`;
+}
+
+function parseShareToken(token) {
+  const parts = String(token ?? "").split(".");
+  if (parts.length !== 3) return null;
+  const [recordId, expiresAt, signature] = parts;
+  if (!recordId || !expiresAt || !signature) return null;
+  const expected = signShareToken(recordId, expiresAt);
+  try {
+    if (
+      !timingSafeEqual(
+        Buffer.from(signature, "hex"),
+        Buffer.from(expected, "hex"),
+      )
+    ) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  const expiresAtSeconds = Number.parseInt(expiresAt, 10);
+  if (!Number.isFinite(expiresAtSeconds)) return null;
+  return {
+    recordId,
+    expiresAt: expiresAtSeconds,
+  };
+}
+
+function readShareRecord(token) {
+  const parsed = parseShareToken(token);
+  if (!parsed) return { error: "invalid share token", status: 404 };
+  if (parsed.expiresAt < Math.floor(Date.now() / 1000)) {
+    try {
+      rmSync(shareRecordPath(parsed.recordId), { force: true });
+    } catch {}
+    return { error: "share link expired", status: 410 };
+  }
+  const path = shareRecordPath(parsed.recordId);
+  if (!existsSync(path)) return { error: "share not found", status: 404 };
+  try {
+    const record = JSON.parse(readFileSync(path, "utf8"));
+    if (
+      record.recordId !== parsed.recordId ||
+      Number.parseInt(String(record.expiresAt ?? ""), 10) !== parsed.expiresAt
+    ) {
+      return { error: "share token mismatch", status: 404 };
+    }
+    return { record };
+  } catch {
+    return { error: "share payload unreadable", status: 500 };
   }
 }
 
@@ -505,6 +589,10 @@ app.get("/healthz", (_req, res) => {
 
 app.use(express.static(PUBLIC_DIR));
 
+app.get("/s/:token", (_req, res) => {
+  res.sendFile(join(PUBLIC_DIR, "share.html"));
+});
+
 app.get("/api/whoami", (req, res) => {
   const session = getOrCreateSession(req, res);
   const activeProject = activeProjectSummary(session);
@@ -536,6 +624,68 @@ app.get("/api/whoami", (req, res) => {
     backend: backendState(),
     realBinaryConfigured: hasRealBackendConfigured(),
     workdir: session.workdir,
+  });
+});
+
+app.post("/api/threads/:threadId/share", sameOriginOnly, (req, res) => {
+  getOrCreateSession(req, res);
+  const threadId = String(req.params.threadId ?? "").trim();
+  const mode = req.body?.mode === "edit" ? "edit" : "readonly";
+  const ttl = clampShareTtl(req.body?.ttl);
+  const thread = cloneJson(req.body?.thread);
+  if (!threadId) {
+    res.status(400).json({ error: "thread id is required" });
+    return;
+  }
+  if (!thread || typeof thread !== "object") {
+    res.status(400).json({ error: "thread snapshot is required" });
+    return;
+  }
+  if (String(thread.id ?? "") !== threadId) {
+    res.status(400).json({ error: "thread snapshot does not match requested id" });
+    return;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + ttl;
+  const recordId = randomUUID();
+  const token = buildShareToken(recordId, expiresAt);
+  const record = {
+    recordId,
+    token,
+    mode,
+    createdAt: now,
+    expiresAt,
+    thread,
+  };
+  writeFileSync(
+    shareRecordPath(recordId),
+    `${JSON.stringify(record, null, 2)}\n`,
+  );
+  const sharePath = `/s/${token}`;
+  const shareUrl = `${req.protocol}://${req.get("host")}${sharePath}`;
+  res.json({
+    ok: true,
+    token,
+    sharePath,
+    shareUrl,
+    expiresAt,
+    mode,
+  });
+});
+
+app.get("/api/shares/:token", (req, res) => {
+  const result = readShareRecord(req.params.token);
+  if (!result.record) {
+    res
+      .status(result.status ?? 404)
+      .json({ error: result.error ?? "share not found" });
+    return;
+  }
+  res.json({
+    mode: result.record.mode ?? "readonly",
+    createdAt: result.record.createdAt ?? null,
+    expiresAt: result.record.expiresAt ?? null,
+    thread: result.record.thread ?? null,
   });
 });
 

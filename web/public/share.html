@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shared Codex Thread</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="share-page">
+    <main id="share-app">
+      <header id="share-header">
+        <div>
+          <div class="workspace-eyebrow">Shared transcript</div>
+          <h1 id="share-title">Loading shared thread…</h1>
+          <div id="share-meta" class="muted"></div>
+        </div>
+        <div class="share-actions">
+          <a href="/" class="button-link ghost">Open Codex Web</a>
+        </div>
+      </header>
+      <section id="share-status" class="workspace-empty" hidden></section>
+      <section id="transcript" aria-label="Shared transcript"></section>
+    </main>
+    <script type="module" src="/share.js"></script>
+  </body>
+</html>

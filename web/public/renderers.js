@@ -146,6 +146,7 @@ export function createRenderers({
         const menu = el("div", { class: "thread-menu" });
         const options = [
           { action: "fork", label: "Fork" },
+          { action: "share", label: "Share" },
           { action: "rename", label: "Rename" },
           {
             action: thread.archived ? "unarchive" : "archive",

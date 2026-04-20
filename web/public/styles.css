@@ -986,6 +986,42 @@ body.workspace-collapsed #workspace-panel {
   font-size: 12.5px;
   line-height: 1.5;
 }
+.share-page {
+  min-height: 100vh;
+}
+#share-app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 36px 20px 48px;
+}
+#share-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+#share-title {
+  margin: 0;
+  font-size: clamp(1.5rem, 2vw, 2.1rem);
+  line-height: 1.1;
+}
+#share-meta {
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.share-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#share-status {
+  margin-bottom: 16px;
+}
+.share-page #transcript {
+  min-height: auto;
+  padding: 0;
+}
 .pill.warn {
   color: var(--warn);
   border-color: rgba(255, 201, 138, 0.28);
@@ -2318,6 +2354,9 @@ button.diff-expand-all:hover {
   }
   .workspace-terminal-form {
     grid-template-columns: 1fr;
+  }
+  #share-header {
+    flex-direction: column;
   }
   .manager-card-head,
   .manager-section-head {

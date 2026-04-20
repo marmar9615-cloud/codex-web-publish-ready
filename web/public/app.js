@@ -689,6 +689,44 @@ async function forkFromItem(itemId) {
   }
 }
 
+async function shareThread(threadId) {
+  const response = await rpc.rpcCall("thread/read", {
+    threadId,
+    includeTurns: true,
+  });
+  const thread = response?.thread;
+  if (!thread?.id) {
+    throw new Error("thread snapshot unavailable");
+  }
+  const shareResponse = await fetch(
+    `/api/threads/${encodeURIComponent(threadId)}/share`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "readonly",
+        ttl: 7 * 24 * 60 * 60,
+        thread,
+      }),
+    },
+  );
+  const data = await shareResponse.json().catch(() => ({}));
+  if (!shareResponse.ok) {
+    throw new Error(data.error ?? `share failed (${shareResponse.status})`);
+  }
+  const shareUrl = data.shareUrl
+    ? String(data.shareUrl)
+    : new URL(String(data.sharePath ?? ""), window.location.origin).toString();
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    renderers.appendSystem(`Copied share link: ${shareUrl}`);
+  } catch {
+    renderers.appendSystem(`Share link: ${shareUrl}`);
+    window.prompt("Copy share link", shareUrl);
+  }
+  window.open(shareUrl, "_blank", "noopener");
+}
+
 async function handleThreadAction(action, thread) {
   const threadId = thread?.id ?? state.activeThreadId;
   if (!threadId) return;
@@ -707,6 +745,11 @@ async function handleThreadAction(action, thread) {
       if (nextThread?.id) await openThread(nextThread.id);
       return;
     }
+    case "share":
+      await shareThread(threadId).catch((error) =>
+        renderers.appendSystem(`share failed: ${error.message}`, "error"),
+      );
+      return;
     case "rename": {
       const proposed = thread?.promptDefault ?? thread?.name ?? "";
       const name = prompt("New thread name:", proposed);
@@ -820,6 +863,18 @@ async function createProject() {
 
 async function activateProject(project) {
   if (!project?.slug) return;
+  const previousSlug = state.whoami?.activeProjectSlug ?? null;
+  const previousName = state.whoami?.activeProjectName ?? null;
+  if (state.whoami) {
+    state.whoami.activeProjectSlug = project.system ? null : project.slug;
+    state.whoami.activeProjectName =
+      project.name ?? (project.system ? "Scratch workspace" : project.slug);
+  }
+  state.projects = state.projects.map((entry) => ({
+    ...entry,
+    active: entry.slug === project.slug,
+  }));
+  renderers.renderProjects();
   try {
     const response = await fetch(
       `/api/projects/${encodeURIComponent(project.slug)}/activate`,
@@ -838,6 +893,15 @@ async function activateProject(project) {
       `Workspace switched to ${data.project?.name ?? project.name ?? project.slug}.`,
     );
   } catch (error) {
+    if (state.whoami) {
+      state.whoami.activeProjectSlug = previousSlug;
+      state.whoami.activeProjectName = previousName;
+    }
+    state.projects = state.projects.map((entry) => ({
+      ...entry,
+      active: entry.slug === (previousSlug ?? "_scratch"),
+    }));
+    renderers.renderProjects();
     renderers.appendSystem(`project activate failed: ${error.message}`, "error");
   }
 }
