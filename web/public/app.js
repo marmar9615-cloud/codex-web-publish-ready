@@ -96,6 +96,49 @@ function hideThinkingIndicator() {
   if (existing) existing.remove();
 }
 
+const DOC_TITLE_BASE = "Codex Web";
+const THREAD_TITLE_MAX = 60;
+
+function truncateTitle(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  return trimmed.length > THREAD_TITLE_MAX
+    ? `${trimmed.slice(0, THREAD_TITLE_MAX - 1)}…`
+    : trimmed;
+}
+
+function deriveThreadTitle(thread) {
+  if (!thread) return "";
+  if (typeof thread.name === "string" && thread.name.trim()) {
+    return truncateTitle(thread.name);
+  }
+  if (typeof thread.preview === "string" && thread.preview.trim()) {
+    return truncateTitle(thread.preview);
+  }
+  for (const turn of thread.turns ?? []) {
+    for (const item of turn.items ?? []) {
+      if (item?.type !== "userMessage") continue;
+      const text = (item.content ?? [])
+        .filter((part) => part?.type === "text")
+        .map((part) => part.text ?? "")
+        .join(" ")
+        .trim();
+      if (text) return truncateTitle(text);
+    }
+  }
+  return "";
+}
+
+function setThreadTitle(title) {
+  const label = title && title.trim() ? title.trim() : "New conversation";
+  const node = $("#thread-title");
+  if (node) node.textContent = label;
+  document.title =
+    label === "New conversation"
+      ? DOC_TITLE_BASE
+      : `${label} — ${DOC_TITLE_BASE}`;
+}
+
 function autoGrow(textarea) {
   const update = () => {
     textarea.style.height = "auto";
@@ -258,6 +301,7 @@ notificationHandlers = createNotificationHandlers({
   onStandaloneCommandDelta,
   retryLastTurn,
   canRetryLastTurn,
+  setThreadTitle,
 });
 
 const handleSlash = createCommandHandler({
@@ -534,7 +578,7 @@ function clearConversationState() {
 function hydrateThread(thread) {
   clearConversationState();
   if (!thread) return;
-  $("#thread-title").textContent = thread.name ?? thread.preview ?? thread.id;
+  setThreadTitle(deriveThreadTitle(thread));
   state.activeThreadId = thread.id;
   for (const turn of thread.turns ?? []) {
     const turnIndex = state.turns.length;
@@ -555,7 +599,12 @@ function hydrateThread(thread) {
 async function openThread(threadId) {
   state.activeThreadId = threadId;
   state.activeTurnId = null;
-  $("#thread-title").textContent = threadId;
+  // Prefer any title we already have from the sidebar list; otherwise keep a
+  // friendly placeholder until thread/read hydrates the real data.
+  const existingThread = state.threads.find((entry) => entry.id === threadId);
+  setThreadTitle(
+    deriveThreadTitle(existingThread) || "Loading conversation…",
+  );
   clearConversationState();
   renderers.renderThreads();
   void subagentPane.refresh();
@@ -596,7 +645,7 @@ function newThread() {
   }
   state.activeThreadId = null;
   state.activeTurnId = null;
-  $("#thread-title").textContent = "New conversation";
+  setThreadTitle("");
   clearConversationState();
   renderers.renderThreads();
   void subagentPane.refresh();
@@ -623,8 +672,7 @@ function onThreadStarted(thread) {
   else state.threads.unshift(snapshot);
   if (!isSubagentThread(thread)) {
     state.activeThreadId = thread.id;
-    $("#thread-title").textContent =
-      thread.name ?? thread.preview ?? thread.id ?? "thread";
+    setThreadTitle(deriveThreadTitle(thread));
   }
   void subagentPane.refresh();
 }
@@ -657,6 +705,62 @@ function onTurnFinished(turn) {
   const record = state.turns.find((entry) => entry.id === turnId);
   if (record) record.status = turn?.status ?? record.status;
   state.currentTurnRecordId = null;
+  if ((turn?.status ?? "completed") === "completed") {
+    void maybeAutoNameThread();
+  }
+}
+
+// Threads we've already tried to auto-name in this tab, so we don't spam
+// `thread/name/set` after every subsequent turn.
+const autoNamedThreadIds = new Set();
+
+async function maybeAutoNameThread() {
+  const threadId = state.activeThreadId;
+  if (!threadId || autoNamedThreadIds.has(threadId)) return;
+  const snapshot = state.threads.find((entry) => entry.id === threadId);
+  if (snapshot && isSubagentThread(snapshot)) return;
+  const existingName =
+    typeof snapshot?.name === "string" ? snapshot.name.trim() : "";
+  // Don't rename user-labelled threads, and don't rename if the current name is
+  // already a non-UUID string (server may have set it upstream).
+  if (existingName && existingName !== threadId) {
+    autoNamedThreadIds.add(threadId);
+    return;
+  }
+  // Find the first user message across the transcript.
+  let firstUserText = "";
+  for (const record of state.turns) {
+    for (const item of record.items ?? []) {
+      if (item?.type !== "userMessage") continue;
+      const text = (item.content ?? [])
+        .filter((part) => part?.type === "text")
+        .map((part) => part.text ?? "")
+        .join(" ")
+        .trim();
+      if (text) {
+        firstUserText = text;
+        break;
+      }
+    }
+    if (firstUserText) break;
+  }
+  if (!firstUserText) return;
+  const name = truncateTitle(firstUserText);
+  if (!name) return;
+  autoNamedThreadIds.add(threadId);
+  try {
+    await rpc.rpcCall("thread/name/set", { threadId, name });
+    // Optimistically update local state; the server broadcasts
+    // `thread/name/updated` which will also refresh the sidebar via
+    // the notification handler.
+    if (snapshot) snapshot.name = name;
+    if (state.activeThreadId === threadId) setThreadTitle(name);
+  } catch (error) {
+    // Auto-naming is best-effort; log and move on so a failure here doesn't
+    // surface as a user-facing error.
+    console.warn("auto thread/name/set failed", error?.message ?? error);
+    autoNamedThreadIds.delete(threadId);
+  }
 }
 
 function syncCommandSessionFromItem(item) {
@@ -955,8 +1059,7 @@ async function handleThreadAction(action, thread) {
         .then(async () => {
           const active = state.threads.find((entry) => entry.id === threadId);
           if (active) active.name = name;
-          if (state.activeThreadId === threadId)
-            $("#thread-title").textContent = name;
+          if (state.activeThreadId === threadId) setThreadTitle(name);
           await refreshThreads();
         })
         .catch((error) =>

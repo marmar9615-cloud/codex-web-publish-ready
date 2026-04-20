@@ -26,6 +26,48 @@ export function isThreadPinned(id) {
   return getPinnedThreadIds().has(id);
 }
 
+function formatAbsoluteTime(ts) {
+  try {
+    return new Date(ts).toLocaleString();
+  } catch {
+    return "";
+  }
+}
+
+function formatRelativeTime(ts, now = Date.now()) {
+  if (!ts) return "";
+  const deltaSec = Math.max(0, Math.floor((now - ts) / 1000));
+  if (deltaSec < 45) return "just now";
+  const deltaMin = Math.round(deltaSec / 60);
+  if (deltaMin < 60) return `${deltaMin}m ago`;
+  const deltaHr = Math.round(deltaMin / 60);
+  if (deltaHr < 24) return `${deltaHr}h ago`;
+  const deltaDay = Math.round(deltaHr / 24);
+  if (deltaDay === 1) return "yesterday";
+  if (deltaDay < 7) return `${deltaDay}d ago`;
+  try {
+    return new Date(ts).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "";
+  }
+}
+
+function makeTimestampEl(ts) {
+  if (!ts) return null;
+  const time = el("time", { class: "msg-time" });
+  try {
+    time.setAttribute("datetime", new Date(ts).toISOString());
+  } catch {
+    // non-fatal; skip the attr if the value is out of range
+  }
+  time.setAttribute("title", formatAbsoluteTime(ts));
+  time.textContent = formatRelativeTime(ts);
+  return time;
+}
+
 export function togglePinnedThread(id) {
   const pinned = getPinnedThreadIds();
   if (pinned.has(id)) {
@@ -62,31 +104,55 @@ export function createRenderers({
     const status = $("#account-status");
     const button = $("#account-btn");
     if (!status || !button) return;
+    // Reset mutable attributes between renders so we don't leak stale state
+    // (e.g. a stale tooltip when the user signs out).
+    status.removeAttribute("title");
+    button.removeAttribute("title");
+    button.classList.remove("icon-btn", "ghost");
     if (!whoami) {
       status.textContent = "—";
       return;
     }
+    const signOutIcon =
+      '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true"><path d="M8 14.5 4.5 11H12V9H4.5L8 5.5M12 3h3a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 15 17h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const setSignOutButton = (title) => {
+      button.innerHTML = signOutIcon;
+      button.classList.add("icon-btn", "ghost");
+      button.setAttribute("aria-label", "Sign out");
+      button.setAttribute("title", title);
+    };
+    const setSignInButton = (label = "Sign in") => {
+      button.textContent = label;
+      button.removeAttribute("aria-label");
+    };
     if (whoami.hasOauth) {
-      status.textContent = `ChatGPT: ${whoami.account?.email ?? whoami.account?.chatgptAccountId ?? "signed in"}`;
+      const detail =
+        whoami.account?.email ??
+        whoami.account?.chatgptAccountId ??
+        "signed in";
+      status.textContent = `ChatGPT: ${detail}`;
+      status.setAttribute("title", detail);
       status.classList.remove("muted");
-      button.textContent = "Sign out";
+      setSignOutButton(`Sign out${whoami.account?.email ? ` (${whoami.account.email})` : ""}`);
     } else if (whoami.oauthPending) {
       status.textContent = "ChatGPT sign-in pending";
       status.classList.remove("muted");
-      button.textContent = "Sign in";
+      setSignInButton();
     } else if (whoami.hasApiKey) {
       status.textContent = "API key set";
       status.classList.remove("muted");
-      button.textContent = "Sign out";
+      setSignOutButton("Sign out");
     } else {
       status.textContent = whoami.realBinaryConfigured
         ? "not signed in"
         : "backend unavailable";
       status.classList.add("muted");
-      button.textContent = "Sign in";
+      setSignInButton();
     }
-    if (whoami.oauthError)
+    if (whoami.oauthError) {
       status.textContent = `Sign-in failed: ${whoami.oauthError}`;
+      status.setAttribute("title", whoami.oauthError);
+    }
     const signedIn = Boolean(whoami.hasOauth || whoami.hasApiKey);
     document.body.classList.toggle("signed-in", signedIn);
     document.body.classList.toggle("signed-out", !signedIn);
@@ -191,6 +257,14 @@ export function createRenderers({
         state.threadMenuOpenId = null;
         openThread(thread.id);
       });
+      // Right-click anywhere on the row opens the same actions menu as the
+      // kebab. Open the menu in-place (attached to the row) rather than
+      // spawning a cursor-anchored popover so we reuse the existing markup.
+      row.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        state.threadMenuOpenId = thread.id;
+        renderThreads();
+      });
       const actions = el("div", { class: "thread-actions" });
       const menuButton = el("button", {
         "class": "thread-menu-toggle ghost",
@@ -290,13 +364,18 @@ export function createRenderers({
     const transcript = $("#transcript");
     let entry = state.itemsById.get(item.id);
     if (!entry) {
-      entry = { item, el: renderItem(item, isComplete) };
+      entry = {
+        item,
+        el: null,
+        receivedAt: Date.now(),
+      };
+      entry.el = renderItem(item, isComplete, entry.receivedAt);
       state.itemsById.set(item.id, entry);
       state.itemOrder.push(item.id);
       transcript.appendChild(entry.el);
     } else {
       entry.item = item;
-      const replacement = renderItem(item, isComplete);
+      const replacement = renderItem(item, isComplete, entry.receivedAt);
       entry.el.replaceWith(replacement);
       entry.el = replacement;
     }
@@ -308,14 +387,14 @@ export function createRenderers({
     scrollToBottom();
   }
 
-  function renderItem(item, isComplete) {
+  function renderItem(item, isComplete, receivedAt) {
     switch (item.type) {
       case "userMessage":
-        return renderUserMessage(item);
+        return renderUserMessage(item, receivedAt);
       case "hookPrompt":
         return renderHookPrompt(item);
       case "agentMessage":
-        return renderAgentMessage(item);
+        return renderAgentMessage(item, receivedAt);
       case "reasoning":
         return renderReasoning(item);
       case "commandExecution":
@@ -347,7 +426,7 @@ export function createRenderers({
     }
   }
 
-  function renderUserMessage(item) {
+  function renderUserMessage(item, receivedAt) {
     const cell = el("div", { class: "cell user" });
     const bubble = el("div", { class: "bubble user-bubble" });
     const parts = (item.content ?? []).map((part) => {
@@ -439,6 +518,8 @@ export function createRenderers({
       bubble.appendChild(tools);
     }
     cell.appendChild(bubble);
+    const timestamp = makeTimestampEl(receivedAt);
+    if (timestamp) cell.appendChild(timestamp);
     hydrateWorkdirMedia(cell);
     return cell;
   }
@@ -454,11 +535,35 @@ export function createRenderers({
     return cell;
   }
 
-  function renderAgentMessage(item) {
+  function renderAgentMessage(item, receivedAt) {
     const cell = el("div", { class: "cell assistant" });
     const bubble = el("div", { class: "bubble" });
     bubble.innerHTML = renderMarkdownish(item.text ?? "");
+    const tools = el("div", { class: "msg-tools" });
+    const copyIcon =
+      '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M5.5 2.5h6A1.5 1.5 0 0 1 13 4v8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><rect x="2.5" y="4.5" width="8" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+    const copyBtn = el("button", {
+      "class": "msg-tool-icon",
+      "type": "button",
+      "title": "Copy this message",
+      "aria-label": "Copy",
+    });
+    copyBtn.innerHTML = `${copyIcon}<span class="msg-tool-label">Copy</span>`;
+    copyBtn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(item.text ?? "");
+        copyBtn.classList.add("msg-tool-icon-ok");
+        setTimeout(() => copyBtn.classList.remove("msg-tool-icon-ok"), 900);
+      } catch {
+        // Clipboard can be denied in some contexts — fail silently.
+      }
+    });
+    tools.appendChild(copyBtn);
+    bubble.appendChild(tools);
     cell.appendChild(bubble);
+    const timestamp = makeTimestampEl(receivedAt);
+    if (timestamp) cell.appendChild(timestamp);
     return cell;
   }
 
@@ -866,11 +971,13 @@ export function createRenderers({
     if (!pill) return;
     if (!rateLimits) {
       pill.hidden = true;
+      pill.removeAttribute("title");
       return;
     }
     const primary = rateLimits.primary?.usedPercent;
     if (primary == null && !rateLimits.credits) {
       pill.hidden = true;
+      pill.removeAttribute("title");
       return;
     }
     pill.hidden = false;
@@ -882,6 +989,56 @@ export function createRenderers({
         : "";
     pill.textContent = `rate: ${used}${credits}`;
     pill.className = `pill${primary != null && primary >= 80 ? " warn" : ""}`;
+    pill.setAttribute("title", buildRatePillTooltip(rateLimits));
+  }
+
+  function buildRatePillTooltip(rateLimits) {
+    const lines = ["Rate limit usage"];
+    const planType = rateLimits.planType;
+    if (planType) lines.push(`Plan: ${planType}`);
+    const formatWindow = (label, window) => {
+      if (!window) return null;
+      const pieces = [`${label}: ${Math.round(window.usedPercent ?? 0)}% used`];
+      if (window.windowDurationMins)
+        pieces.push(`${window.windowDurationMins}m window`);
+      const resetText = formatRateReset(window.resetsAt);
+      if (resetText) pieces.push(resetText);
+      return pieces.join(" · ");
+    };
+    const primaryLine = formatWindow("Primary", rateLimits.primary);
+    if (primaryLine) lines.push(primaryLine);
+    const secondaryLine = formatWindow("Secondary", rateLimits.secondary);
+    if (secondaryLine) lines.push(secondaryLine);
+    const creditsLine = formatCreditsLine(rateLimits.credits);
+    if (creditsLine) lines.push(creditsLine);
+    return lines.join("\n");
+  }
+
+  function formatRateReset(resetsAt) {
+    if (resetsAt == null) return "";
+    // resetsAt may be seconds or milliseconds since epoch depending on the
+    // upstream source; treat values below 1e12 as seconds.
+    const ms = resetsAt > 1e12 ? resetsAt : resetsAt * 1000;
+    const deltaSec = Math.max(0, Math.floor((ms - Date.now()) / 1000));
+    if (deltaSec <= 0) return "resets now";
+    if (deltaSec < 60) return `resets in ${deltaSec}s`;
+    const mins = Math.round(deltaSec / 60);
+    if (mins < 60) return `resets in ${mins}m`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `resets in ${hours}h`;
+    try {
+      return `resets ${new Date(ms).toLocaleString()}`;
+    } catch {
+      return "";
+    }
+  }
+
+  function formatCreditsLine(credits) {
+    if (!credits) return "";
+    if (credits.unlimited) return "Credits: unlimited";
+    if (credits.balance) return `Credits: ${credits.balance}`;
+    if (credits.hasCredits) return "Credits: available";
+    return "";
   }
 
   function renderAccountPill() {

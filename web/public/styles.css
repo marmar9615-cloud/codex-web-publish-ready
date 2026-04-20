@@ -1858,10 +1858,34 @@ body:not(.signed-in):not(.signed-out) .empty-hero-signed-out { display: none; }
     transform var(--dur-2) var(--ease-out);
 }
 .cell.user:hover .msg-tools,
-.cell.user:focus-within .msg-tools {
+.cell.user:focus-within .msg-tools,
+.cell.assistant:hover .msg-tools,
+.cell.assistant:focus-within .msg-tools {
   opacity: 1;
   pointer-events: auto;
   transform: none;
+}
+.cell.assistant .msg-tools {
+  justify-content: flex-start;
+}
+
+.msg-time {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+  letter-spacing: 0.01em;
+  opacity: 0;
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+.cell.user .msg-time {
+  align-self: flex-end;
+}
+.cell.user:hover .msg-time,
+.cell.user:focus-within .msg-time,
+.cell.assistant:hover .msg-time,
+.cell.assistant:focus-within .msg-time {
+  opacity: 1;
 }
 .msg-tool {
   font-size: 11.5px;

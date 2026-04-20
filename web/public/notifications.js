@@ -53,6 +53,7 @@ export function createNotificationHandlers({
   onStandaloneCommandDelta,
   retryLastTurn,
   canRetryLastTurn,
+  setThreadTitle,
 }) {
   const retryAction = () =>
     typeof canRetryLastTurn === "function" && canRetryLastTurn()
@@ -287,13 +288,21 @@ export function createNotificationHandlers({
         renderThreads();
         return;
       case "thread/name/updated":
-      case "thread/nameUpdated":
+      case "thread/nameUpdated": {
+        const name = params.threadName ?? params.name ?? "";
+        // Reflect the rename into both the sidebar snapshot and (if active)
+        // the header, so a server-pushed rename doesn't require a refresh.
+        const snapshot = state.threads.find(
+          (entry) => entry.id === params.threadId,
+        );
+        if (snapshot && name) snapshot.name = name;
         if (state.activeThreadId === params.threadId) {
-          $("#thread-title").textContent =
-            params.threadName ?? params.name ?? state.activeThreadId;
+          if (typeof setThreadTitle === "function") setThreadTitle(name);
+          else $("#thread-title").textContent = name || "New conversation";
         }
         renderThreads();
         return;
+      }
       case "thread/tokenUsage/updated":
       case "thread/tokenUsageUpdated":
         renderTokenPill(params.tokenUsage ?? params);
