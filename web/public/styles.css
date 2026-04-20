@@ -2511,6 +2511,62 @@ button.diff-expand-all:hover {
   font-size: 12px;
   font-weight: 500;
 }
+.upload-chip.upload-chip-rich {
+  padding: 3px 8px 3px 3px;
+  max-width: 260px;
+}
+.upload-chip-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex: 0 0 auto;
+  background: rgba(0, 0, 0, 0.35);
+}
+.upload-chip-glyph {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(127, 168, 255, 0.15);
+  color: var(--accent-bright);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+.upload-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.upload-chip button {
+  margin-left: 2px;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1;
+}
+#composer.composer-drop-active {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 18px rgba(127, 168, 255, 0.25);
+}
+#composer.composer-drop-active::after {
+  content: "Drop to attach";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(16, 22, 36, 0.78);
+  color: var(--accent-bright);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
 .auth-required-card { border-color: rgba(255, 201, 138, 0.32); }
 
 .composer-row {

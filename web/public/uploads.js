@@ -66,14 +66,25 @@ export function createUploads({ appendSystem }) {
     }
     host.hidden = false;
     host.innerHTML = state.pendingUploads
-      .map(
-        (upload, index) => `
-      <div class="upload-chip" data-upload-index="${index}">
-        <span>${escapeHtml(upload.name ?? "image")}</span>
-        <button type="button" data-remove-upload="${index}" class="ghost">×</button>
+      .map((upload, index) => {
+        const isImage =
+          typeof upload.mimeType === "string" &&
+          upload.mimeType.startsWith("image/");
+        const thumbAttr = upload.path
+          ? `data-workdir-path="${escapeHtml(upload.path)}"`
+          : "";
+        const thumb =
+          isImage && upload.path
+            ? `<img class="upload-chip-thumb" ${thumbAttr} alt="" />`
+            : '<span class="upload-chip-glyph" aria-hidden="true">📎</span>';
+        return `
+      <div class="upload-chip upload-chip-rich" data-upload-index="${index}" title="${escapeHtml(upload.name ?? "attachment")}">
+        ${thumb}
+        <span class="upload-chip-name">${escapeHtml(upload.name ?? "attachment")}</span>
+        <button type="button" data-remove-upload="${index}" class="ghost" aria-label="Remove attachment">×</button>
       </div>
-    `,
-      )
+    `;
+      })
       .join("");
     host.querySelectorAll("[data-remove-upload]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -81,6 +92,7 @@ export function createUploads({ appendSystem }) {
         renderPendingUploads();
       });
     });
+    hydrateWorkdirMedia(host);
   }
 
   async function onAttachChange(event) {
@@ -101,6 +113,38 @@ export function createUploads({ appendSystem }) {
         await queueUpload(file);
       }
     }
+  }
+
+  function bindDragAndDrop(root) {
+    const node = root ?? $("#composer");
+    if (!node) return;
+    const onDragEnter = (event) => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      event.preventDefault();
+      node.classList.add("composer-drop-active");
+    };
+    const onDragOver = (event) => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      event.preventDefault();
+      node.classList.add("composer-drop-active");
+    };
+    const onDragLeave = (event) => {
+      if (!node.contains(event.relatedTarget)) {
+        node.classList.remove("composer-drop-active");
+      }
+    };
+    const onDrop = async (event) => {
+      if (!event.dataTransfer?.files?.length) return;
+      event.preventDefault();
+      node.classList.remove("composer-drop-active");
+      for (const file of event.dataTransfer.files) {
+        await queueUpload(file);
+      }
+    };
+    node.addEventListener("dragenter", onDragEnter);
+    node.addEventListener("dragover", onDragOver);
+    node.addEventListener("dragleave", onDragLeave);
+    node.addEventListener("drop", onDrop);
   }
 
   async function queueUpload(file) {
@@ -147,5 +191,6 @@ export function createUploads({ appendSystem }) {
     onAttachChange,
     onComposerPaste,
     queueUpload,
+    bindDragAndDrop,
   };
 }

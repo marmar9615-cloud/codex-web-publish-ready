@@ -1024,6 +1024,7 @@ function bindUi() {
   input.addEventListener("input", onInput);
   input.addEventListener("keydown", onKeyDown);
   input.addEventListener("paste", uploads.onComposerPaste);
+  uploads.bindDragAndDrop?.($("#composer"));
   autoGrow(input);
 
   document.addEventListener("keydown", (event) => {
