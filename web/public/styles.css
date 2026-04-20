@@ -738,6 +738,11 @@ body.workspace-collapsed #workspace-panel {
   padding: 12px;
   background: rgba(255, 255, 255, 0.01);
 }
+#workspace-terminal {
+  border-top: 1px solid var(--hairline);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.015);
+}
 #workspace-files {
   min-width: 0;
   min-height: 0;
@@ -906,6 +911,19 @@ body.workspace-collapsed #workspace-panel {
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.55;
+}
+.workspace-terminal-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 10px;
+}
+.workspace-terminal-form textarea {
+  min-height: 60px;
+  max-height: 140px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 .pill.warn {
   color: var(--warn);
@@ -2232,6 +2250,9 @@ button.diff-expand-all:hover {
     max-width: 100%;
   }
   .hook-grid {
+    grid-template-columns: 1fr;
+  }
+  .workspace-terminal-form {
     grid-template-columns: 1fr;
   }
   .manager-card-head,

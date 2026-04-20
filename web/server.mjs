@@ -55,6 +55,7 @@ const PROJECT_INTERNAL_EXCLUDES = [
 const COMMAND_TIMEOUT_MS = 15 * 60 * 1000;
 const SHIP_OUTPUT_LIMIT = 12_000;
 const GITHUB_API_ROOT = "https://api.github.com";
+const TERMINAL_REPLAY_RING_SIZE = 400;
 
 const CHATGPT_ISSUER = (
   process.env.CODEX_CHATGPT_ISSUER ?? "https://auth.openai.com"
@@ -119,6 +120,7 @@ function makeSession(id) {
     threads: new Map(),
     activeThreadId: undefined,
     backend: null,
+    terminal: null,
   };
 }
 
@@ -1485,6 +1487,7 @@ function activateProjectForSession(session, slug) {
     session.activeThreadId = undefined;
     session.workdir = session.defaultWorkdir;
     ensureWorkdirScaffold(session.workdir);
+    killTerminal(session, "workspace switched");
     killBackend(session, "workspace switched");
     return {
       slug: "_scratch",
@@ -1503,6 +1506,7 @@ function activateProjectForSession(session, slug) {
   session.activeThreadId = undefined;
   session.workdir = dir;
   ensureWorkdirScaffold(session.workdir);
+  killTerminal(session, `workspace switched:${slug}`);
   killBackend(session, `workspace switched:${slug}`);
   return serializeProject(session, project, dir);
 }
@@ -2050,19 +2054,241 @@ function discoverMemoryDocs(session) {
   return items;
 }
 
+function terminalStatusFrame(state, extra = {}) {
+  return {
+    type: "status",
+    state,
+    ...extra,
+  };
+}
+
+function buildTerminalSpawn(shellPath) {
+  return {
+    command: shellPath,
+    args: ["-l"],
+  };
+}
+
+function sendTerminalFrame(session, frame) {
+  const terminal = session.terminal;
+  if (!terminal) return;
+  const payload = JSON.stringify(frame);
+  terminal.outFrames.push(payload);
+  if (terminal.outFrames.length > TERMINAL_REPLAY_RING_SIZE) {
+    terminal.outFrames.shift();
+  }
+  if (
+    terminal.attachedWs &&
+    terminal.attachedWs.readyState === terminal.attachedWs.OPEN
+  ) {
+    try {
+      terminal.attachedWs.send(payload);
+    } catch {}
+  }
+}
+
+function ensureTerminal(session, options = {}) {
+  if (options.restart) {
+    killTerminal(session, "restart");
+  }
+  if (session.terminal?.child && !session.terminal.child.killed) {
+    return session.terminal;
+  }
+
+  const shellPath =
+    process.env.SHELL ??
+    (existsSync("/bin/zsh")
+      ? "/bin/zsh"
+      : existsSync("/bin/bash")
+        ? "/bin/bash"
+        : "sh");
+  const codexHome = join(session.workdir, ".codex");
+  mkdirSync(codexHome, { recursive: true });
+  const env = {
+    ...process.env,
+    ...readProjectSecrets(session.activeProjectSlug),
+    CODEX_HOME: codexHome,
+    TERM: process.env.TERM ?? "xterm-256color",
+  };
+  const spawnConfig = buildTerminalSpawn(shellPath);
+
+  let child;
+  try {
+    child = spawn(spawnConfig.command, spawnConfig.args, {
+      cwd: session.workdir,
+      env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch (error) {
+    console.error("[codex-web] failed to spawn terminal:", error.message);
+    return null;
+  }
+
+  const terminal = {
+    child,
+    attachedWs: null,
+    outFrames: [],
+    cwd: session.workdir,
+    shellPath,
+  };
+  session.terminal = terminal;
+
+  sendTerminalFrame(
+    session,
+    terminalStatusFrame("running", {
+      cwd: session.workdir,
+      shell: shellPath,
+    }),
+  );
+
+  const onOutput = (stream, chunk) => {
+    sendTerminalFrame(session, {
+      type: "output",
+      stream,
+      dataBase64: Buffer.from(chunk).toString("base64"),
+    });
+  };
+
+  child.stdout.on("data", (chunk) => onOutput("stdout", chunk));
+  child.stderr.on("data", (chunk) => onOutput("stderr", chunk));
+  child.on("error", (error) => {
+    sendTerminalFrame(
+      session,
+      terminalStatusFrame("error", { message: error.message }),
+    );
+    session.terminal = null;
+  });
+  child.on("exit", (code, signal) => {
+    sendTerminalFrame(
+      session,
+      terminalStatusFrame("exited", {
+        code,
+        signal,
+      }),
+    );
+    if (session.terminal === terminal) {
+      session.terminal = null;
+    }
+  });
+
+  return terminal;
+}
+
+function killTerminal(session, reason) {
+  const terminal = session.terminal;
+  if (!terminal) return;
+  const child = terminal.child;
+  if (child && !child.killed) {
+    process.stderr.write(
+      `[codex-web] killing terminal (${reason}) for session ${session.id.slice(0, 8)}\n`,
+    );
+    try {
+      child.kill("SIGTERM");
+    } catch {}
+    setTimeout(() => {
+      try {
+        if (!child.killed) child.kill("SIGKILL");
+      } catch {}
+    }, 1500).unref();
+  }
+  session.terminal = null;
+}
+
+function attachTerminalWs(session, ws) {
+  const terminal = ensureTerminal(session);
+  if (!terminal) {
+    try {
+      ws.close(4503, "terminal unavailable");
+    } catch {}
+    return;
+  }
+  if (terminal.attachedWs && terminal.attachedWs !== ws) {
+    try {
+      terminal.attachedWs.close(4000, "superseded");
+    } catch {}
+  }
+  terminal.attachedWs = ws;
+  for (const frame of terminal.outFrames) {
+    try {
+      ws.send(frame);
+    } catch {}
+  }
+  ws.on("message", (raw) => onTerminalWsMessage(session, terminal, raw));
+  ws.on("close", () => detachTerminalWs(terminal, ws));
+  ws.on("error", () => detachTerminalWs(terminal, ws));
+}
+
+function detachTerminalWs(terminal, ws) {
+  if (terminal.attachedWs === ws) {
+    terminal.attachedWs = null;
+  }
+}
+
+function onTerminalWsMessage(session, terminal, raw) {
+  let message;
+  try {
+    message = JSON.parse(raw.toString("utf8"));
+  } catch {
+    return;
+  }
+  if (!message || typeof message !== "object") return;
+  if (message.type === "input") {
+    try {
+      terminal.child.stdin.write(String(message.data ?? ""));
+    } catch {}
+    return;
+  }
+  if (message.type === "interrupt") {
+    try {
+      terminal.child.stdin.write("\u0003");
+    } catch {}
+    return;
+  }
+  if (message.type === "restart") {
+    killTerminal(session, "restart requested");
+    ensureTerminal(session);
+  }
+}
+
 // -------- WebSocket: JSON-RPC pass-through --------
 const server = createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({ noServer: true });
+const termWss = new WebSocketServer({ noServer: true });
 
-server.on("upgrade", (req) => {
+server.on("upgrade", (req, socket, head) => {
   const origin = req.headers.origin;
-  if (!origin) return;
+  if (!origin) {
+    socket.destroy();
+    return;
+  }
   try {
     const url = new URL(origin);
-    if (url.host !== req.headers.host) req.destroy();
+    if (url.host !== req.headers.host) {
+      socket.destroy();
+      return;
+    }
   } catch {
-    req.destroy();
+    socket.destroy();
+    return;
   }
+
+  let pathname = "";
+  try {
+    pathname = new URL(req.url ?? "/", `http://${req.headers.host}`).pathname;
+  } catch {
+    socket.destroy();
+    return;
+  }
+
+  const target = pathname === "/ws" ? wss : pathname === "/ws/term" ? termWss : null;
+  if (!target) {
+    socket.destroy();
+    return;
+  }
+
+  target.handleUpgrade(req, socket, head, (ws) => {
+    target.emit("connection", ws, req);
+  });
 });
 
 wss.on("connection", (ws, req) => {
@@ -2072,6 +2298,15 @@ wss.on("connection", (ws, req) => {
     return;
   }
   attachWs(session, ws);
+});
+
+termWss.on("connection", (ws, req) => {
+  const session = getSessionFromCookie(req.headers.cookie);
+  if (!session) {
+    ws.close(4401, "no session");
+    return;
+  }
+  attachTerminalWs(session, ws);
 });
 
 // ---------- per-session backend lifecycle ----------

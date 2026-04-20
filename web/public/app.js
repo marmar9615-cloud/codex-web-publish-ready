@@ -11,6 +11,7 @@ import { createUploads, hydrateWorkdirMedia } from "./uploads.js";
 import { createRenderers } from "./renderers.js";
 import { createModals } from "./modals.js";
 import { createFileTree } from "./filetree.js";
+import { createTerminal } from "./terminal.js";
 import { createTestRunner } from "./tests.js";
 import { createTodoPane } from "./todos.js";
 import {
@@ -118,6 +119,10 @@ const testRunner = createTestRunner({
   appendSystem: renderers.appendSystem,
 });
 
+const terminal = createTerminal({
+  appendSystem: renderers.appendSystem,
+});
+
 const todoPane = createTodoPane();
 
 notificationHandlers = createNotificationHandlers({
@@ -179,6 +184,7 @@ async function bootstrap() {
   await refreshThreads();
   bindUi();
   fileTree.init();
+  terminal.init();
   testRunner.init();
   todoPane.init();
   window.addEventListener("codex:planUpdated", (event) => {
@@ -198,6 +204,9 @@ async function refreshWhoAmI() {
   if (state.initialized) {
     await fileTree.refresh().catch((error) => {
       console.warn("workspace refresh failed", error.message);
+    });
+    await terminal.refresh().catch((error) => {
+      console.warn("terminal refresh failed", error.message);
     });
     await testRunner.refresh().catch((error) => {
       console.warn("test runner refresh failed", error.message);
