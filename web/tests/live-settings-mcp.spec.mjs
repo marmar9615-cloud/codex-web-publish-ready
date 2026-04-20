@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { gotoReady, sendPrompt } from "./helpers.mjs";
 
 test.describe("Codex Web — live settings and MCP", () => {
-  test("opens the tabbed settings surface and the live MCP manager", async ({ page }) => {
+  test("opens live settings surfaces for MCP, hooks, memories, skills, plugins, and apps", async ({ page }) => {
     await gotoReady(page);
 
     await page.locator("#settings-btn").click();
@@ -12,9 +12,37 @@ test.describe("Codex Web — live settings and MCP", () => {
         async () => await page.locator('.modal select[name="model"] option').count(),
       )
       .toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Memories" }).click();
+    await expect(page.locator("#memory-list")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reset memory store" })).toBeVisible();
+    await page.getByRole("button", { name: "Hooks" }).click();
+    await expect(page.locator("#hooks-editor .hook-row")).toHaveCount(1);
+    await page.getByRole("button", { name: "Add hook" }).click();
+    await expect(page.locator("#hooks-editor .hook-row")).toHaveCount(2);
+    await page.locator("#cancel").click();
+
+    await page.locator("#settings-btn").click();
     await page.getByRole("button", { name: "MCP" }).click();
     await page.locator("#open-mcp").click();
     await expect(page.locator(".modal h2")).toContainText("MCP servers");
+    await page.locator("#close").click();
+
+    await page.locator("#settings-btn").click();
+    await page.getByRole("button", { name: "Skills" }).click();
+    await page.locator("#open-skills").click();
+    await expect(page.locator(".modal h2")).toContainText("Skills");
+    await page.locator("#close").click();
+
+    await page.locator("#settings-btn").click();
+    await page.getByRole("button", { name: "Plugins" }).click();
+    await page.locator("#open-plugins").click();
+    await expect(page.locator(".modal h2")).toContainText("Plugins");
+    await page.locator("#close").click();
+
+    await page.locator("#settings-btn").click();
+    await page.getByRole("button", { name: "Apps" }).click();
+    await page.locator("#open-apps").click();
+    await expect(page.locator(".modal h2")).toContainText("Apps");
     await page.locator("#close").click();
   });
 

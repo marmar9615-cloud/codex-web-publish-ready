@@ -17,7 +17,7 @@ import {
 } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -97,6 +97,7 @@ const DEVICE_CODE_TIMEOUT_MS = 15 * 60 * 1000;
 const PREVIEW_URL_TTL_SECONDS = 15 * 60;
 const FILE_SIGNING_SECRET =
   process.env.CODEX_WEB_FILE_SIGNING_SECRET ?? randomBytes(32).toString("hex");
+const MEMORY_DOC_FILENAMES = ["AGENTS.override.md", "AGENTS.md", "CLAUDE.md"];
 
 function isSecureRequest(req) {
   const forwardedProto = req.headers["x-forwarded-proto"];
@@ -566,6 +567,17 @@ app.get("/api/threads", (req, res) => {
   res.json({ threads });
 });
 
+app.get("/api/memories", sameOriginOnly, (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const memoryDocs = discoverMemoryDocs(session);
+  res.json({
+    codexHome: join(session.workdir, ".codex"),
+    workdir: session.workdir,
+    projectRoot: findProjectRoot(session.workdir),
+    items: memoryDocs,
+  });
+});
+
 app.post("/api/file-search", sameOriginOnly, async (req, res) => {
   const session = getOrCreateSession(req, res);
   const { query } = req.body ?? {};
@@ -672,6 +684,64 @@ async function searchWorkdir(root, query) {
   }
   await walk(root, "");
   return results;
+}
+
+function findProjectRoot(startDir) {
+  let cursor = startDir;
+  while (cursor && cursor !== dirname(cursor)) {
+    if (existsSync(join(cursor, ".git"))) return cursor;
+    cursor = dirname(cursor);
+  }
+  return startDir;
+}
+
+function readMemoryPreview(filePath) {
+  try {
+    const text = readFileSync(filePath, "utf8").trim();
+    const preview = text.replace(/\s+/g, " ").slice(0, 220);
+    return preview.length < text.length ? `${preview}…` : preview;
+  } catch {
+    return "";
+  }
+}
+
+function discoverMemoryDocs(session) {
+  const items = [];
+  const seen = new Set();
+  const codexHome = join(session.workdir, ".codex");
+  const pushDoc = (path, scope) => {
+    if (!existsSync(path) || seen.has(path)) return;
+    seen.add(path);
+    items.push({
+      path,
+      fileName: basename(path),
+      scope,
+      preview: readMemoryPreview(path),
+    });
+  };
+
+  for (const fileName of MEMORY_DOC_FILENAMES) {
+    pushDoc(join(codexHome, fileName), "session");
+  }
+
+  const root = findProjectRoot(session.workdir);
+  const dirs = [];
+  let cursor = session.workdir;
+  while (cursor) {
+    dirs.push(cursor);
+    if (cursor === root || cursor === dirname(cursor)) break;
+    cursor = dirname(cursor);
+  }
+  dirs.reverse();
+
+  for (const dir of dirs) {
+    const scope = dir === session.workdir ? "workspace" : "project";
+    for (const fileName of MEMORY_DOC_FILENAMES) {
+      pushDoc(join(dir, fileName), scope);
+    }
+  }
+
+  return items;
 }
 
 // -------- WebSocket: JSON-RPC pass-through --------

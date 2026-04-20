@@ -1,4 +1,4 @@
-import { $, state, save } from "./state.js";
+import { $, load, state, save } from "./state.js";
 import { escapeHtml } from "./utils.js";
 
 export function createModals({
@@ -19,9 +19,20 @@ export function createModals({
     return ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
   }
 
-  function modal(html, onMount) {
+  const hookEvents = [
+    "PreToolUse",
+    "PostToolUse",
+    "SessionStart",
+    "UserPromptSubmit",
+    "Stop",
+  ];
+  const threadMemoryModes = load("threadMemoryModes", {});
+  let nextHookRowId = 1;
+
+  function modal(html, onMount, options = {}) {
     const root = $("#modal-root");
-    root.innerHTML = `<div class="modal-backdrop"><div class="modal">${html}</div></div>`;
+    const className = options.className ? ` ${options.className}` : "";
+    root.innerHTML = `<div class="modal-backdrop"><div class="modal${className}">${html}</div></div>`;
     root.querySelector(".modal-backdrop").addEventListener("click", (event) => {
       if (event.target.classList.contains("modal-backdrop")) closeModal();
     });
@@ -54,6 +65,296 @@ export function createModals({
     } catch (error) {
       appendSystem(`${title} failed: ${error.message}`, "error");
     }
+  }
+
+  function openTextModal(title, text, options = {}) {
+    modal(
+      `
+      <h2>${escapeHtml(title)}</h2>
+      <pre>${escapeHtml(text)}</pre>
+      <div class="modal-actions">
+        <button id="close" class="primary">Close</button>
+      </div>
+    `,
+      (mount) => {
+        mount.querySelector("#close").addEventListener("click", closeModal);
+      },
+      options,
+    );
+  }
+
+  function getSessionCodexHome() {
+    const workdir = state.whoami?.workdir ?? "";
+    if (!workdir) return "";
+    return `${workdir.replace(/\/$/, "")}/.codex`;
+  }
+
+  function getHooksFilePath() {
+    const codexHome = getSessionCodexHome();
+    return codexHome ? `${codexHome}/hooks.json` : "";
+  }
+
+  function encodeBase64(text) {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  function decodeBase64(base64) {
+    const binary = atob(base64 ?? "");
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
+  function createEmptyHookRow() {
+    return {
+      id: `hook-row-${nextHookRowId++}`,
+      eventName: "PreToolUse",
+      matcher: "",
+      command: "",
+      statusMessage: "",
+      timeoutSec: "",
+      enabled: true,
+    };
+  }
+
+  function cloneJson(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function normalizeHooksForEditor(rawHooksFile) {
+    const preserved = { hooks: {} };
+    const rows = [];
+    let unsupportedCount = 0;
+    const hooksByEvent = rawHooksFile?.hooks ?? {};
+
+    for (const eventName of hookEvents) {
+      const groups = Array.isArray(hooksByEvent?.[eventName])
+        ? hooksByEvent[eventName]
+        : [];
+      for (const group of groups) {
+        const matcher = typeof group?.matcher === "string" ? group.matcher : "";
+        const hooks = Array.isArray(group?.hooks) ? group.hooks : [];
+        const preservedHooks = [];
+        for (const hook of hooks) {
+          if (hook?.type === "command" && !hook?.async) {
+            rows.push({
+              id: `hook-row-${nextHookRowId++}`,
+              eventName,
+              matcher,
+              command: String(hook.command ?? ""),
+              statusMessage: String(hook.statusMessage ?? ""),
+              timeoutSec:
+                hook.timeoutSec != null
+                  ? String(hook.timeoutSec)
+                  : hook.timeout != null
+                    ? String(hook.timeout)
+                    : "",
+              enabled: true,
+            });
+            continue;
+          }
+          if (hook && typeof hook === "object") {
+            preservedHooks.push(hook);
+            unsupportedCount += 1;
+          }
+        }
+        if (preservedHooks.length) {
+          (preserved.hooks[eventName] ??= []).push({
+            ...(matcher ? { matcher } : {}),
+            hooks: preservedHooks,
+          });
+        }
+      }
+    }
+
+    if (!rows.length) rows.push(createEmptyHookRow());
+    return { rows, preserved, unsupportedCount };
+  }
+
+  async function loadHooksEditorState() {
+    const hooksPath = getHooksFilePath();
+    if (!state.initialized || !hooksPath) {
+      return {
+        rows: [createEmptyHookRow()],
+        preserved: { hooks: {} },
+        unsupportedCount: 0,
+        loadError: null,
+      };
+    }
+    try {
+      const response = await rpcCall("fs/readFile", { path: hooksPath });
+      const rawText = decodeBase64(response?.dataBase64 ?? "");
+      const parsed = rawText.trim() ? JSON.parse(rawText) : { hooks: {} };
+      return {
+        ...normalizeHooksForEditor(parsed),
+        loadError: null,
+      };
+    } catch (error) {
+      return {
+        rows: [createEmptyHookRow()],
+        preserved: { hooks: {} },
+        unsupportedCount: 0,
+        loadError: /not found/i.test(error.message) ? null : error.message,
+      };
+    }
+  }
+
+  function buildHooksFile(rows, preserved) {
+    const next = cloneJson(preserved ?? { hooks: {} });
+    next.hooks ??= {};
+    for (const row of rows) {
+      if (!row.enabled || !row.command.trim()) continue;
+      (next.hooks[row.eventName] ??= []).push({
+        ...(row.matcher.trim() ? { matcher: row.matcher.trim() } : {}),
+        hooks: [
+          {
+            type: "command",
+            command: row.command.trim(),
+            ...(row.statusMessage.trim()
+              ? { statusMessage: row.statusMessage.trim() }
+              : {}),
+            ...(row.timeoutSec ? { timeoutSec: Number(row.timeoutSec) } : {}),
+          },
+        ],
+      });
+    }
+    for (const [eventName, groups] of Object.entries(next.hooks)) {
+      if (!Array.isArray(groups) || groups.length === 0) delete next.hooks[eventName];
+    }
+    return next;
+  }
+
+  async function writeHooksFile(rows, preserved) {
+    const codexHome = getSessionCodexHome();
+    const hooksPath = getHooksFilePath();
+    if (!codexHome || !hooksPath) {
+      throw new Error("session config directory is unavailable");
+    }
+    await rpcCall("fs/createDirectory", {
+      path: codexHome,
+      recursive: true,
+    });
+    const text = `${JSON.stringify(buildHooksFile(rows, preserved), null, 2)}\n`;
+    await rpcCall("fs/writeFile", {
+      path: hooksPath,
+      dataBase64: encodeBase64(text),
+    });
+  }
+
+  async function loadMemoriesData() {
+    try {
+      const response = await fetch("/api/memories");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error ?? `memory discovery failed (${response.status})`);
+      }
+      return data;
+    } catch (error) {
+      return { items: [], error: error.message };
+    }
+  }
+
+  function renderMemoryItems(items) {
+    if (!items?.length) {
+      return `<div class="manager-empty">No AGENTS.md or CLAUDE.md files were discovered for this session.</div>`;
+    }
+    return items
+      .map(
+        (item, index) => `
+        <article class="manager-card" data-memory-index="${index}">
+          <div class="manager-card-head">
+            <div>
+              <h3>${escapeHtml(item.fileName ?? "memory file")}</h3>
+              <div class="manager-meta">${escapeHtml(item.scope ?? "memory")} · ${escapeHtml(item.path ?? "")}</div>
+            </div>
+            <button type="button" class="ghost" data-action="preview-memory" data-memory-index="${index}">Preview</button>
+          </div>
+          ${
+            item.preview
+              ? `<div class="manager-blurb">${escapeHtml(item.preview)}</div>`
+              : '<div class="manager-blurb muted">Empty file</div>'
+          }
+        </article>
+      `,
+      )
+      .join("");
+  }
+
+  function renderHookRows(rows) {
+    return rows
+      .map(
+        (row) => `
+        <div class="hook-row" data-hook-row-id="${escapeHtml(row.id)}">
+          <div class="hook-row-top">
+            <label class="hook-toggle">
+              <input type="checkbox" data-hook-field="enabled" ${row.enabled ? "checked" : ""} />
+              <span>Enabled</span>
+            </label>
+            <button type="button" class="ghost" data-action="remove-hook" data-hook-row-id="${escapeHtml(row.id)}">Remove</button>
+          </div>
+          <div class="hook-grid">
+            <div class="modal-row">
+              <label>Event</label>
+              <select data-hook-field="eventName">
+                ${hookEvents
+                  .map(
+                    (eventName) =>
+                      `<option value="${eventName}" ${row.eventName === eventName ? "selected" : ""}>${eventName}</option>`,
+                  )
+                  .join("")}
+              </select>
+            </div>
+            <div class="modal-row">
+              <label>Matcher regex</label>
+              <input data-hook-field="matcher" value="${escapeHtml(row.matcher)}" placeholder="*, ^Bash$, Edit|Write" />
+            </div>
+            <div class="modal-row">
+              <label>Status message</label>
+              <input data-hook-field="statusMessage" value="${escapeHtml(row.statusMessage)}" placeholder="running pre tool use hook" />
+            </div>
+            <div class="modal-row">
+              <label>Timeout (seconds)</label>
+              <input data-hook-field="timeoutSec" value="${escapeHtml(row.timeoutSec)}" type="number" min="1" step="1" placeholder="600" />
+            </div>
+          </div>
+          <div class="modal-row">
+            <label>Command</label>
+            <textarea data-hook-field="command" rows="2" placeholder="python3 /path/to/check.py">${escapeHtml(row.command)}</textarea>
+          </div>
+        </div>
+      `,
+      )
+      .join("");
+  }
+
+  function collectHookRows(mount) {
+    return [...mount.querySelectorAll(".hook-row")].map((row) => ({
+      id: row.dataset.hookRowId,
+      enabled: row.querySelector('[data-hook-field="enabled"]')?.checked ?? false,
+      eventName:
+        row.querySelector('[data-hook-field="eventName"]')?.value ?? "PreToolUse",
+      matcher: row.querySelector('[data-hook-field="matcher"]')?.value ?? "",
+      statusMessage:
+        row.querySelector('[data-hook-field="statusMessage"]')?.value ?? "",
+      timeoutSec: row.querySelector('[data-hook-field="timeoutSec"]')?.value ?? "",
+      command: row.querySelector('[data-hook-field="command"]')?.value ?? "",
+    }));
+  }
+
+  function currentThreadMemoryMode() {
+    if (!state.activeThreadId) return "enabled";
+    return threadMemoryModes[state.activeThreadId] ?? "enabled";
+  }
+
+  function persistThreadMemoryMode(mode) {
+    if (!state.activeThreadId) return;
+    threadMemoryModes[state.activeThreadId] = mode;
+    save("threadMemoryModes", threadMemoryModes);
   }
 
   function openUserInputModal(message) {
@@ -471,9 +772,6 @@ export function createModals({
               `<div class="muted">Error: ${escapeHtml(error.message)}</div>`;
           }
         };
-        window.__mcpRefresh = refresh;
-        await refresh();
-
         mount
           .querySelector("#mcp-list")
           .addEventListener("click", async (event) => {
@@ -542,7 +840,376 @@ export function createModals({
           mount.querySelector("#mcp-cmd").value = "";
           await refresh();
         });
+        window.__mcpRefresh = refresh;
+        await refresh();
       },
+    );
+  }
+
+  async function openSkillsModal() {
+    modal(
+      `
+      <h2>Skills</h2>
+      <p>Live skills discovered for the current workspace. Toggle any skill here and the backend will hot-reload it for future turns.</p>
+      <div class="modal-actions modal-actions-left">
+        <button id="reload-skills" type="button">Reload</button>
+        <button id="close" class="ghost" type="button">Close</button>
+      </div>
+      <div id="skills-list"><div class="muted">Loading…</div></div>
+    `,
+      async (mount) => {
+        let currentSkills = [];
+        const refresh = async () => {
+          try {
+            const result = await rpcCall("skills/list", {
+              cwds: state.whoami?.workdir ? [state.whoami.workdir] : null,
+              forceReload: true,
+            });
+            const entries = result?.data ?? [];
+            currentSkills = entries.flatMap((entry) =>
+              (entry.skills ?? []).map((skill) => ({
+                ...skill,
+                cwd: entry.cwd,
+              })),
+            );
+            const errors = entries.flatMap((entry) =>
+              (entry.errors ?? []).map((error) => ({
+                ...error,
+                cwd: entry.cwd,
+              })),
+            );
+            const list = mount.querySelector("#skills-list");
+            if (!currentSkills.length && !errors.length) {
+              list.innerHTML =
+                '<div class="manager-empty">No skills were discovered for this workspace.</div>';
+              return;
+            }
+            list.innerHTML = `
+              ${
+                errors.length
+                  ? `<div class="manager-note">${errors
+                      .map(
+                        (error) =>
+                          `${escapeHtml(error.cwd ?? "workspace")}: ${escapeHtml(error.message ?? "skill load error")}`,
+                      )
+                      .join("<br />")}</div>`
+                  : ""
+              }
+              ${currentSkills
+                .map(
+                  (skill, index) => `
+                <article class="manager-card">
+                  <div class="manager-card-head">
+                    <div>
+                      <h3>${escapeHtml(skill.interface?.displayName ?? skill.name)}</h3>
+                      <div class="manager-meta">${escapeHtml(skill.scope ?? "skill")} · ${escapeHtml(skill.cwd ?? "")}</div>
+                    </div>
+                    <button
+                      type="button"
+                      class="${skill.enabled ? "" : "primary"}"
+                      data-action="toggle-skill"
+                      data-skill-index="${index}"
+                    >
+                      ${skill.enabled ? "Disable" : "Enable"}
+                    </button>
+                  </div>
+                  <div class="manager-blurb">${escapeHtml(skill.interface?.shortDescription ?? skill.description ?? "No description")}</div>
+                  <div class="manager-meta">${escapeHtml(skill.path ?? "")}</div>
+                  ${
+                    skill.dependencies?.tools?.length
+                      ? `<div class="manager-tags">${skill.dependencies.tools
+                          .map(
+                            (dependency) =>
+                              `<span class="manager-tag">${escapeHtml(`${dependency.type}:${dependency.value}`)}</span>`,
+                          )
+                          .join("")}</div>`
+                      : ""
+                  }
+                </article>
+              `,
+                )
+                .join("")}
+            `;
+          } catch (error) {
+            mount.querySelector("#skills-list").innerHTML = `
+              <div class="manager-empty">Skills failed to load: ${escapeHtml(error.message)}</div>
+            `;
+          }
+        };
+
+        mount
+          .querySelector("#skills-list")
+          .addEventListener("click", async (event) => {
+            const button = event.target.closest("[data-action='toggle-skill']");
+            if (!button) return;
+            const skill = currentSkills[Number(button.dataset.skillIndex)];
+            if (!skill) return;
+            button.disabled = true;
+            try {
+              await rpcCall("skills/config/write", {
+                path: skill.path ?? null,
+                name: skill.path ? null : skill.name ?? null,
+                enabled: !skill.enabled,
+              });
+              await refresh();
+            } catch (error) {
+              appendSystem(`skill update failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+
+        mount
+          .querySelector("#reload-skills")
+          .addEventListener("click", () => void refresh());
+        mount.querySelector("#close").addEventListener("click", () => {
+          window.__skillsRefresh = null;
+          closeModal();
+        });
+        window.__skillsRefresh = refresh;
+        await refresh();
+      },
+      { className: "modal-wide" },
+    );
+  }
+
+  async function openPluginsModal() {
+    modal(
+      `
+      <h2>Plugins</h2>
+      <p>Browse the configured plugin marketplaces for this workspace, add a marketplace, and install or uninstall plugins directly.</p>
+      <div class="modal-row modal-section">
+        <label>Add marketplace</label>
+        <input id="marketplace-source" placeholder="owner/repo, git URL, or SSH URL" />
+      </div>
+      <div class="modal-actions modal-actions-left">
+        <button id="add-marketplace" class="primary" type="button">Add marketplace</button>
+        <button id="reload-plugins" type="button">Reload</button>
+        <button id="close" class="ghost" type="button">Close</button>
+      </div>
+      <div id="plugins-list"><div class="muted">Loading…</div></div>
+    `,
+      async (mount) => {
+        let currentPlugins = [];
+        const refresh = async () => {
+          try {
+            const result = await rpcCall("plugin/list", {
+              cwds: state.whoami?.workdir ? [state.whoami.workdir] : null,
+            });
+            const marketplaces = result?.marketplaces ?? [];
+            currentPlugins = marketplaces.flatMap((marketplace) =>
+              (marketplace.plugins ?? []).map((plugin) => ({
+                ...plugin,
+                marketplaceName:
+                  marketplace.interface?.displayName ?? marketplace.name,
+                marketplacePath: marketplace.path,
+              })),
+            );
+            const featured = new Set(result?.featuredPluginIds ?? []);
+            const list = mount.querySelector("#plugins-list");
+            if (!marketplaces.length) {
+              list.innerHTML =
+                '<div class="manager-empty">No plugin marketplaces are configured yet.</div>';
+              return;
+            }
+            list.innerHTML = `
+              ${
+                result?.marketplaceLoadErrors?.length
+                  ? `<div class="manager-note">${result.marketplaceLoadErrors
+                      .map(
+                        (error) =>
+                          `${escapeHtml(error.marketplacePath ?? "marketplace")}: ${escapeHtml(error.message ?? "load error")}`,
+                      )
+                      .join("<br />")}</div>`
+                  : ""
+              }
+              ${marketplaces
+                .map(
+                  (marketplace) => `
+                  <section class="manager-section">
+                    <div class="manager-section-head">
+                      <h3>${escapeHtml(marketplace.interface?.displayName ?? marketplace.name)}</h3>
+                      <span class="manager-meta">${escapeHtml(marketplace.path ?? "")}</span>
+                    </div>
+                    ${
+                      marketplace.plugins?.length
+                        ? marketplace.plugins
+                            .map((plugin) => {
+                              const index = currentPlugins.findIndex(
+                                (entry) =>
+                                  entry.id === plugin.id &&
+                                  entry.marketplacePath === marketplace.path,
+                              );
+                              const installable =
+                                plugin.installPolicy !== "NOT_AVAILABLE";
+                              return `
+                                <article class="manager-card">
+                                  <div class="manager-card-head">
+                                    <div>
+                                      <h3>${escapeHtml(plugin.interface?.displayName ?? plugin.name)}</h3>
+                                      <div class="manager-meta">${escapeHtml(plugin.interface?.category ?? "plugin")} · ${escapeHtml(marketplace.interface?.displayName ?? marketplace.name)}</div>
+                                    </div>
+                                    ${
+                                      plugin.installed
+                                        ? `<button type="button" data-action="uninstall-plugin" data-plugin-index="${index}">Uninstall</button>`
+                                        : `<button type="button" class="primary" data-action="install-plugin" data-plugin-index="${index}" ${installable ? "" : "disabled"}>${installable ? "Install" : "Unavailable"}</button>`
+                                    }
+                                  </div>
+                                  <div class="manager-blurb">${escapeHtml(plugin.interface?.shortDescription ?? plugin.interface?.longDescription ?? "No description")}</div>
+                                  <div class="manager-tags">
+                                    <span class="manager-tag">${plugin.installed ? "installed" : "not installed"}</span>
+                                    <span class="manager-tag">${plugin.enabled ? "enabled" : "disabled"}</span>
+                                    <span class="manager-tag">${escapeHtml(plugin.authPolicy ?? "ON_USE")}</span>
+                                    ${featured.has(plugin.id) ? '<span class="manager-tag">featured</span>' : ""}
+                                  </div>
+                                </article>
+                              `;
+                            })
+                            .join("")
+                        : '<div class="manager-empty">This marketplace has no plugins.</div>'
+                    }
+                  </section>
+                `,
+                )
+                .join("")}
+            `;
+          } catch (error) {
+            mount.querySelector("#plugins-list").innerHTML = `
+              <div class="manager-empty">Plugins failed to load: ${escapeHtml(error.message)}</div>
+            `;
+          }
+        };
+
+        mount
+          .querySelector("#plugins-list")
+          .addEventListener("click", async (event) => {
+            const button = event.target.closest("button[data-plugin-index]");
+            if (!button) return;
+            const plugin = currentPlugins[Number(button.dataset.pluginIndex)];
+            if (!plugin) return;
+            button.disabled = true;
+            try {
+              if (button.dataset.action === "install-plugin") {
+                await rpcCall("plugin/install", {
+                  marketplacePath: plugin.marketplacePath,
+                  pluginName: plugin.name,
+                  forceRemoteSync: false,
+                });
+              } else if (button.dataset.action === "uninstall-plugin") {
+                await rpcCall("plugin/uninstall", {
+                  pluginId: plugin.id,
+                  forceRemoteSync: false,
+                });
+              }
+              await refresh();
+            } catch (error) {
+              appendSystem(`plugin update failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+
+        mount
+          .querySelector("#add-marketplace")
+          .addEventListener("click", async () => {
+            const input = mount.querySelector("#marketplace-source");
+            const source = input.value.trim();
+            if (!source) return;
+            try {
+              await rpcCall("marketplace/add", { source, refName: null });
+              input.value = "";
+              await refresh();
+            } catch (error) {
+              appendSystem(`marketplace add failed: ${error.message}`, "error");
+            }
+          });
+        mount
+          .querySelector("#reload-plugins")
+          .addEventListener("click", () => void refresh());
+        mount.querySelector("#close").addEventListener("click", closeModal);
+        await refresh();
+      },
+      { className: "modal-wide" },
+    );
+  }
+
+  async function openAppsModal() {
+    modal(
+      `
+      <h2>Apps</h2>
+      <p>Connectors available to this thread. Connected apps appear as accessible; others can be opened on ChatGPT for installation or auth.</p>
+      <div class="modal-actions modal-actions-left">
+        <button id="reload-apps" type="button">Reload</button>
+        <button id="close" class="ghost" type="button">Close</button>
+      </div>
+      <div id="apps-list"><div class="muted">Loading…</div></div>
+    `,
+      async (mount) => {
+        let currentApps = [];
+        const refresh = async () => {
+          try {
+            const result = await rpcCall("app/list", {
+              limit: 100,
+              threadId: state.activeThreadId ?? null,
+              forceRefetch: false,
+            });
+            currentApps = result?.data ?? [];
+            const list = mount.querySelector("#apps-list");
+            if (!currentApps.length) {
+              list.innerHTML =
+                '<div class="manager-empty">No apps were returned by the backend.</div>';
+              return;
+            }
+            list.innerHTML = currentApps
+              .map(
+                (app) => `
+                  <article class="manager-card">
+                    <div class="manager-card-head">
+                      <div>
+                        <h3>${escapeHtml(app.name ?? app.id)}</h3>
+                        <div class="manager-meta">${escapeHtml(app.id ?? "")}</div>
+                      </div>
+                      ${
+                        app.installUrl
+                          ? `<a class="button-link ${app.isAccessible ? "ghost" : "primary"}" href="${escapeHtml(app.installUrl)}" target="_blank" rel="noopener">${app.isAccessible ? "Open" : "Install"}</a>`
+                          : ""
+                      }
+                    </div>
+                    <div class="manager-blurb">${escapeHtml(app.description ?? "No description")}</div>
+                    <div class="manager-tags">
+                      <span class="manager-tag">${app.isAccessible ? "connected" : "not connected"}</span>
+                      <span class="manager-tag">${app.isEnabled ? "enabled" : "disabled"}</span>
+                      ${
+                        (app.labels ?? [])
+                          .map(
+                            (label) =>
+                              `<span class="manager-tag">${escapeHtml(label)}</span>`,
+                          )
+                          .join("")
+                      }
+                    </div>
+                  </article>
+                `,
+              )
+              .join("");
+          } catch (error) {
+            mount.querySelector("#apps-list").innerHTML = `
+              <div class="manager-empty">Apps failed to load: ${escapeHtml(error.message)}</div>
+            `;
+          }
+        };
+
+        mount
+          .querySelector("#reload-apps")
+          .addEventListener("click", () => void refresh());
+        mount.querySelector("#close").addEventListener("click", () => {
+          window.__appsRefresh = null;
+          closeModal();
+        });
+        window.__appsRefresh = refresh;
+        await refresh();
+      },
+      { className: "modal-wide" },
     );
   }
 
@@ -568,6 +1235,10 @@ export function createModals({
       await refreshModels().catch(() => {});
     }
 
+    const [hooksState, memoriesData] = await Promise.all([
+      loadHooksEditorState(),
+      loadMemoriesData(),
+    ]);
     const settings = state.settings;
     const config = state.configSnapshot?.config ?? {};
     const configLayers = state.configSnapshot?.layers ?? [];
@@ -679,8 +1350,33 @@ export function createModals({
       ${panel(
         "memories",
         `
-        <p class="settings-copy">Memories remain config-driven in the web build for now.</p>
-        ${summaryBlock("Memories config", config.memories ?? config.memory ?? null)}
+        <p class="settings-copy">Discovered instruction files come from the workspace path chain plus the session Codex home. Resetting the memory store clears generated memories, while thread memory mode controls whether the active thread stays eligible for future memory generation.</p>
+        ${
+          memoriesData.error
+            ? `<div class="manager-note">${escapeHtml(memoriesData.error)}</div>`
+            : ""
+        }
+        <div class="modal-row">
+          <label>Thread memory mode</label>
+          <div class="memory-toolbar">
+            <select id="thread-memory-mode" ${state.activeThreadId ? "" : "disabled"}>
+              <option value="enabled" ${currentThreadMemoryMode() === "enabled" ? "selected" : ""}>Enabled</option>
+              <option value="disabled" ${currentThreadMemoryMode() === "disabled" ? "selected" : ""}>Disabled</option>
+            </select>
+            <button id="apply-memory-mode" type="button" ${state.activeThreadId ? "" : "disabled"}>Apply to active thread</button>
+            <button id="refresh-memories" type="button">Refresh</button>
+            <button id="reset-memories" type="button">Reset memory store</button>
+          </div>
+          <div class="settings-copy">
+            ${
+              state.activeThreadId
+                ? `Active thread: ${escapeHtml(state.activeThreadId)}. The backend does not expose the current saved mode yet, so the selector reflects the most recent web-set value for this thread.`
+                : "Start or resume a thread to update its memory mode."
+            }
+          </div>
+        </div>
+        <div class="manager-meta">${escapeHtml(memoriesData.codexHome ?? getSessionCodexHome() ?? "")}</div>
+        <div id="memory-list" class="manager-list">${renderMemoryItems(memoriesData.items ?? [])}</div>
       `,
         tabForFocus !== "memories",
       )}
@@ -725,9 +1421,9 @@ export function createModals({
       ${panel(
         "skills",
         `
-        <p class="settings-copy">Skills are discovered live from the backend.</p>
+        <p class="settings-copy">Skills are discovered live from the backend and can be enabled or disabled per user config.</p>
         <div class="modal-actions modal-actions-left">
-          <button id="open-skills" type="button">Open skills list…</button>
+          <button id="open-skills" type="button">Open skills manager…</button>
         </div>
       `,
         tabForFocus !== "skills",
@@ -735,9 +1431,9 @@ export function createModals({
       ${panel(
         "plugins",
         `
-        <p class="settings-copy">Plugins are listed from <code>plugin/list</code>.</p>
+        <p class="settings-copy">Plugin marketplaces and install state come from <code>plugin/list</code> and can be changed directly from the manager.</p>
         <div class="modal-actions modal-actions-left">
-          <button id="open-plugins" type="button">Open plugins list…</button>
+          <button id="open-plugins" type="button">Open plugins manager…</button>
         </div>
       `,
         tabForFocus !== "plugins",
@@ -745,9 +1441,9 @@ export function createModals({
       ${panel(
         "apps",
         `
-        <p class="settings-copy">Apps are listed from <code>app/list</code>.</p>
+        <p class="settings-copy">Apps are listed from <code>app/list</code> and reflect whether the current thread can already access each connector.</p>
         <div class="modal-actions modal-actions-left">
-          <button id="open-apps" type="button">Open apps list…</button>
+          <button id="open-apps" type="button">Open apps manager…</button>
         </div>
       `,
         tabForFocus !== "apps",
@@ -755,8 +1451,24 @@ export function createModals({
       ${panel(
         "hooks",
         `
-        <p class="settings-copy">Hooks remain raw-config driven in the web build.</p>
-        ${summaryBlock("Hooks config", config.hooks ?? null)}
+        <p class="settings-copy">Command hooks are stored in the session config folder as <code>hooks.json</code>. Each enabled row below becomes one command hook entry; unsupported hook types are preserved when you save.</p>
+        ${
+          hooksState.loadError
+            ? `<div class="manager-note">${escapeHtml(hooksState.loadError)}</div>`
+            : ""
+        }
+        ${
+          hooksState.unsupportedCount
+            ? `<div class="manager-note">${hooksState.unsupportedCount} unsupported hook entr${hooksState.unsupportedCount === 1 ? "y" : "ies"} will be preserved on save.</div>`
+            : ""
+        }
+        <div class="manager-meta">${escapeHtml(getHooksFilePath() || "session .codex/hooks.json")}</div>
+        <div class="modal-actions modal-actions-left">
+          <button id="add-hook-row" type="button">Add hook</button>
+          <button id="reload-hooks" type="button">Reload</button>
+          <button id="save-hooks" class="primary" type="button">Save hooks</button>
+        </div>
+        <div id="hooks-editor" class="hooks-editor">${renderHookRows(hooksState.rows)}</div>
       `,
         tabForFocus !== "hooks",
       )}
@@ -797,6 +1509,8 @@ export function createModals({
       </div>
     `,
       (mount) => {
+        let currentHooksState = hooksState;
+        let currentMemoriesData = memoriesData;
         const setTab = (tab) => {
           mount.querySelectorAll(".settings-tab").forEach((node) => {
             node.classList.toggle("active", node.dataset.tab === tab);
@@ -804,6 +1518,17 @@ export function createModals({
           mount.querySelectorAll(".settings-panel").forEach((node) => {
             node.hidden = node.dataset.panel !== tab;
           });
+        };
+        const hooksEditor = mount.querySelector("#hooks-editor");
+        const memoryList = mount.querySelector("#memory-list");
+        const memoryModeSelect = mount.querySelector("#thread-memory-mode");
+        const renderHooksEditor = () => {
+          if (hooksEditor) hooksEditor.innerHTML = renderHookRows(currentHooksState.rows);
+        };
+        const renderMemoryList = () => {
+          if (memoryList) {
+            memoryList.innerHTML = renderMemoryItems(currentMemoriesData.items ?? []);
+          }
         };
         mount.querySelectorAll(".settings-tab").forEach((node) => {
           node.addEventListener("click", () => setTab(node.dataset.tab));
@@ -815,22 +1540,106 @@ export function createModals({
         });
         mount
           .querySelector("#open-skills")
-          ?.addEventListener(
-            "click",
-            () => void openListModal("Skills", "skills/list", { limit: 100 }),
-          );
+          ?.addEventListener("click", () => void openSkillsModal());
         mount
           .querySelector("#open-plugins")
-          ?.addEventListener(
-            "click",
-            () => void openListModal("Plugins", "plugin/list", { limit: 100 }),
-          );
+          ?.addEventListener("click", () => void openPluginsModal());
         mount
           .querySelector("#open-apps")
-          ?.addEventListener(
-            "click",
-            () => void openListModal("Apps", "app/list", { limit: 100 }),
+          ?.addEventListener("click", () => void openAppsModal());
+        mount.querySelector("#add-hook-row")?.addEventListener("click", () => {
+          currentHooksState.rows.push(createEmptyHookRow());
+          renderHooksEditor();
+        });
+        hooksEditor?.addEventListener("click", (event) => {
+          const button = event.target.closest("[data-action='remove-hook']");
+          if (!button) return;
+          currentHooksState.rows = currentHooksState.rows.filter(
+            (row) => row.id !== button.dataset.hookRowId,
           );
+          if (!currentHooksState.rows.length) {
+            currentHooksState.rows = [createEmptyHookRow()];
+          }
+          renderHooksEditor();
+        });
+        mount.querySelector("#reload-hooks")?.addEventListener("click", async () => {
+          currentHooksState = await loadHooksEditorState();
+          renderHooksEditor();
+          appendSystem("Hooks reloaded from hooks.json.");
+        });
+        mount.querySelector("#save-hooks")?.addEventListener("click", async () => {
+          const button = mount.querySelector("#save-hooks");
+          button.disabled = true;
+          try {
+            currentHooksState.rows = collectHookRows(mount);
+            await writeHooksFile(currentHooksState.rows, currentHooksState.preserved);
+            await refreshConfigState().catch(() => {});
+            appendSystem("Hooks saved.");
+          } catch (error) {
+            appendSystem(`hooks save failed: ${error.message}`, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
+        mount
+          .querySelector("#apply-memory-mode")
+          ?.addEventListener("click", async () => {
+            if (!state.activeThreadId || !memoryModeSelect) return;
+            const button = mount.querySelector("#apply-memory-mode");
+            button.disabled = true;
+            try {
+              await rpcCall("thread/memoryMode/set", {
+                threadId: state.activeThreadId,
+                mode: memoryModeSelect.value,
+              });
+              persistThreadMemoryMode(memoryModeSelect.value);
+              appendSystem(`thread memory mode → ${memoryModeSelect.value}`);
+            } catch (error) {
+              appendSystem(`memory mode update failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+        mount
+          .querySelector("#refresh-memories")
+          ?.addEventListener("click", async () => {
+            currentMemoriesData = await loadMemoriesData();
+            renderMemoryList();
+            appendSystem("Memory discovery refreshed.");
+          });
+        mount
+          .querySelector("#reset-memories")
+          ?.addEventListener("click", async () => {
+            if (!confirm("Reset the session memory store? Generated memories will be deleted.")) {
+              return;
+            }
+            const button = mount.querySelector("#reset-memories");
+            button.disabled = true;
+            try {
+              await rpcCall("memory/reset", {});
+              currentMemoriesData = await loadMemoriesData();
+              renderMemoryList();
+              appendSystem("Memory store reset.");
+            } catch (error) {
+              appendSystem(`memory reset failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+        memoryList?.addEventListener("click", async (event) => {
+          const button = event.target.closest("[data-action='preview-memory']");
+          if (!button) return;
+          const item = currentMemoriesData.items?.[Number(button.dataset.memoryIndex)];
+          if (!item?.path) return;
+          try {
+            const response = await rpcCall("fs/readFile", { path: item.path });
+            openTextModal(item.fileName ?? "Memory file", decodeBase64(response?.dataBase64 ?? ""), {
+              className: "modal-wide",
+            });
+          } catch (error) {
+            appendSystem(`memory preview failed: ${error.message}`, "error");
+          }
+        });
         if (focus) {
           const field = mount.querySelector(`[name="${focus}"]`);
           if (field) field.focus();
@@ -886,9 +1695,12 @@ export function createModals({
     openJsonModal,
     openListModal,
     openLogin,
+    openAppsModal,
     openMcpModal,
     openPermissionsModal,
+    openPluginsModal,
     openSettings,
+    openSkillsModal,
     openUserInputModal,
   };
 }

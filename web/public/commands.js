@@ -22,6 +22,9 @@ export function createCommandHandler({
   openLogin,
   doLogout,
   openMcpModal,
+  openSkillsModal,
+  openPluginsModal,
+  openAppsModal,
   openJsonModal,
   openListModal,
   appendSystem,
@@ -192,19 +195,24 @@ export function createCommandHandler({
         appendSystem("Pick a thread from the sidebar to resume.");
         return;
       case "/skills":
-        void openListModal("Skills", "skills/list", {
-          cwds: state.whoami?.workdir ? [state.whoami.workdir] : null,
-          forceReload: true,
-        });
+        if (openSkillsModal) void openSkillsModal();
+        else
+          void openListModal("Skills", "skills/list", {
+            cwds: state.whoami?.workdir ? [state.whoami.workdir] : null,
+            forceReload: true,
+          });
         return;
       case "/apps":
-        void openListModal("Apps", "app/list", {
-          limit: 100,
-          forceRefetch: true,
-        });
+        if (openAppsModal) void openAppsModal();
+        else
+          void openListModal("Apps", "app/list", {
+            limit: 100,
+            forceRefetch: true,
+          });
         return;
       case "/plugins":
-        void openListModal("Plugins", "plugin/list", { limit: 100 });
+        if (openPluginsModal) void openPluginsModal();
+        else void openListModal("Plugins", "plugin/list", { limit: 100 });
         return;
       case "/experimental":
         void openListModal(
