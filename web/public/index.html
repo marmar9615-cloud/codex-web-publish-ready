@@ -81,7 +81,22 @@
         </div>
 
         <aside id="subagent-pane" aria-label="Running sub-agent tasks" hidden></aside>
-        <div id="transcript" tabindex="0" aria-label="Conversation"></div>
+        <div id="transcript-wrap">
+          <div id="transcript" tabindex="0" aria-label="Conversation"></div>
+          <button
+            id="transcript-jump-btn"
+            type="button"
+            class="transcript-jump-btn"
+            aria-label="Jump to latest message"
+            title="Jump to latest"
+            hidden
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            <span>Latest</span>
+          </button>
+        </div>
         <template id="empty-hero-tpl">
           <div class="empty-hero" aria-hidden="false">
             <div class="empty-hero-mark" aria-hidden="true">

@@ -26,9 +26,41 @@ import {
 import { createRpc } from "./rpc.js";
 import { createCommandHandler } from "./commands.js";
 
-function scrollToBottom() {
+let transcriptAutoScroll = true;
+
+function isTranscriptNearBottom() {
   const transcript = $("#transcript");
-  transcript.scrollTop = transcript.scrollHeight;
+  if (!transcript) return true;
+  const threshold = 80;
+  const distance =
+    transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight;
+  return distance <= threshold;
+}
+
+function scrollToBottom(options = {}) {
+  const transcript = $("#transcript");
+  if (!transcript) return;
+  if (options.force || transcriptAutoScroll) {
+    transcript.scrollTop = transcript.scrollHeight;
+    transcriptAutoScroll = true;
+    const jumpBtn = $("#transcript-jump-btn");
+    if (jumpBtn) jumpBtn.hidden = true;
+  }
+}
+
+function bindTranscriptScrollAffordance() {
+  const transcript = $("#transcript");
+  const jumpBtn = $("#transcript-jump-btn");
+  if (!transcript || !jumpBtn) return;
+  transcript.addEventListener("scroll", () => {
+    transcriptAutoScroll = isTranscriptNearBottom();
+    jumpBtn.hidden = transcriptAutoScroll;
+  });
+  jumpBtn.addEventListener("click", () => {
+    scrollToBottom({ force: true });
+    const input = $("#input");
+    input?.focus();
+  });
 }
 
 function setInFlight(value) {
@@ -458,6 +490,10 @@ function clearConversationState() {
   state.currentTurnRecordId = null;
   todoPane.clear();
   renderers.clearTranscript();
+  // Switching threads or starting fresh: snap back to bottom.
+  transcriptAutoScroll = true;
+  const jumpBtn = $("#transcript-jump-btn");
+  if (jumpBtn) jumpBtn.hidden = true;
 }
 
 function hydrateThread(thread) {
@@ -930,6 +966,11 @@ function bindUi() {
   $("#new-thread").addEventListener("click", newThread);
   $("#sidebar-toggle-btn")?.addEventListener("click", toggleSidebar);
   bindWorkspaceTabs();
+  bindTranscriptScrollAffordance();
+  $("#workspace-run-tests-btn")?.addEventListener("click", () => {
+    activateWorkspaceTab("runner");
+    void testRunner.runDetectedTests();
+  });
   $("#account-btn").addEventListener("click", onAccountClick);
   $("#settings-btn").addEventListener("click", () => modals.openSettings());
   $("#workspace-github-btn")?.addEventListener("click", () => {

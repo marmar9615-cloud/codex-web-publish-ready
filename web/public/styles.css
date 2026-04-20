@@ -1538,11 +1538,51 @@ body.workspace-collapsed #workspace-panel {
 /* -----------------------------------------------
    Transcript
    ----------------------------------------------- */
+#transcript-wrap {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 #transcript {
   overflow-y: auto;
   padding: 28px 24px 32px;
   outline: none;
   scroll-padding-bottom: 24px;
+  flex: 1;
+  min-height: 0;
+}
+.transcript-jump-btn {
+  position: absolute;
+  right: 22px;
+  bottom: 18px;
+  z-index: 6;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.2;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  animation: fadeIn 160ms var(--ease-out);
+}
+.transcript-jump-btn:hover {
+  color: var(--text);
+  border-color: rgba(127, 168, 255, 0.28);
+}
+.transcript-jump-btn svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+.transcript-jump-btn[hidden] {
+  display: none !important;
 }
 
 /* Rich empty state — hero block (shown until a real message lands) */
