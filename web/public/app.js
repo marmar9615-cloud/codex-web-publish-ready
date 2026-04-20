@@ -807,6 +807,61 @@ async function handleThreadAction(action, thread) {
       if (nextThread?.id) await openThread(nextThread.id);
       return;
     }
+    case "duplicate": {
+      const forkResult = await rpc
+        .rpcCall("thread/fork", {
+          threadId,
+          persistExtendedHistory: true,
+        })
+        .catch((error) => {
+          renderers.appendSystem(`duplicate failed: ${error.message}`, "error");
+          return null;
+        });
+      const newThread = forkResult?.thread ?? forkResult;
+      if (!newThread?.id) return;
+      const baseName = thread?.name ?? thread?.preview ?? thread?.id ?? "thread";
+      const copyName = `${baseName} (copy)`;
+      await rpc
+        .rpcCall("thread/name/set", {
+          threadId: newThread.id,
+          name: copyName,
+        })
+        .catch(() => {});
+      await refreshThreads().catch(() => {});
+      await openThread(newThread.id);
+      renderers.appendSystem(`Duplicated as "${copyName}".`);
+      return;
+    }
+    case "export": {
+      try {
+        const response = await rpc.rpcCall("thread/read", {
+          threadId,
+          includeTurns: true,
+        });
+        const payload = {
+          exportedAt: new Date().toISOString(),
+          thread: response?.thread ?? response ?? { id: threadId },
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        const safeName = String(thread?.name ?? thread?.id ?? "thread")
+          .replace(/[^a-z0-9-_]+/gi, "_")
+          .slice(0, 64);
+        anchor.download = `${safeName || "thread"}-${threadId.slice(0, 8)}.json`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        renderers.appendSystem(`Exported thread as ${anchor.download}.`);
+      } catch (error) {
+        renderers.appendSystem(`export failed: ${error.message}`, "error");
+      }
+      return;
+    }
     case "share":
       await shareThread(threadId).catch((error) =>
         renderers.appendSystem(`share failed: ${error.message}`, "error"),
@@ -901,6 +956,12 @@ function bindUi() {
   });
   document.addEventListener("click", (event) => {
     if (!event.target.closest(".thread-actions") && state.threadMenuOpenId) {
+      state.threadMenuOpenId = null;
+      renderers.renderThreads();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.threadMenuOpenId) {
       state.threadMenuOpenId = null;
       renderers.renderThreads();
     }

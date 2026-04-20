@@ -163,7 +163,9 @@ export function createRenderers({
         const menu = el("div", { class: "thread-menu" });
         const options = [
           { action: "fork", label: "Fork" },
+          { action: "duplicate", label: "Duplicate" },
           { action: "share", label: "Share" },
+          { action: "export", label: "Export JSON" },
           { action: "rename", label: "Rename" },
           {
             action: thread.archived ? "unarchive" : "archive",
