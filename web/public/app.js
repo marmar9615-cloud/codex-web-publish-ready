@@ -221,6 +221,7 @@ const handleSlash = createCommandHandler({
 });
 
 async function bootstrap() {
+  applyPersistedSidebarState();
   await refreshWhoAmI();
   await refreshProjects();
   await refreshThreads();
@@ -1020,7 +1021,20 @@ function bindUi() {
 }
 
 function toggleSidebar() {
-  document.body.classList.toggle("sidebar-collapsed");
+  const next = !document.body.classList.contains("sidebar-collapsed");
+  document.body.classList.toggle("sidebar-collapsed", next);
+  try {
+    localStorage.setItem("sidebarCollapsed", next ? "1" : "0");
+  } catch {}
+}
+
+function applyPersistedSidebarState() {
+  try {
+    const stored = localStorage.getItem("sidebarCollapsed");
+    if (stored === "1") {
+      document.body.classList.add("sidebar-collapsed");
+    }
+  } catch {}
 }
 
 function focusComposerAndOpenSlash() {
