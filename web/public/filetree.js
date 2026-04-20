@@ -116,14 +116,12 @@ export function createFileTree({ rpcCall, appendSystem }) {
   }
 
   function applyVisibility() {
-    document.body.classList.toggle(
-      "workspace-collapsed",
-      workspaceUi.visible === false,
-    );
+    const collapsed = workspaceUi.visible === false;
+    document.body.classList.toggle("workspace-collapsed", collapsed);
     const toggleButton = $("#workspace-toggle-btn");
     if (toggleButton) {
-      toggleButton.textContent =
-        workspaceUi.visible === false ? "Show files" : "Hide files";
+      toggleButton.textContent = collapsed ? "Show files" : "Hide files";
+      toggleButton.setAttribute("aria-pressed", collapsed ? "false" : "true");
     }
   }
 
@@ -156,6 +154,9 @@ export function createFileTree({ rpcCall, appendSystem }) {
       workspaceUi.visible = workspaceUi.visible === false;
       persistUi();
       applyVisibility();
+      // Kick off a refresh when opening — if this is the first time the
+      // pane is shown since sign-in, the tree may still be empty.
+      if (workspaceUi.visible) void refresh();
     });
     $("#workspace-close-btn")?.addEventListener("click", () => {
       workspaceUi.visible = false;

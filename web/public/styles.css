@@ -1873,6 +1873,37 @@ body:not(.signed-in):not(.signed-out) .empty-hero-signed-out { display: none; }
 .msg-tool:hover {
   color: var(--text);
 }
+.msg-tool-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  font-size: 11.5px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    background var(--dur-1) var(--ease-out);
+}
+.msg-tool-icon:hover {
+  color: var(--text);
+  border-color: rgba(127, 168, 255, 0.32);
+  background: rgba(127, 168, 255, 0.08);
+}
+.msg-tool-icon-ok {
+  color: var(--accent-2);
+  border-color: rgba(125, 231, 209, 0.35);
+  background: rgba(125, 231, 209, 0.1);
+}
+.msg-tool-label {
+  letter-spacing: 0.01em;
+}
 
 .cell.assistant { padding: 4px 0; }
 .cell.assistant .bubble {
@@ -1968,6 +1999,69 @@ body:not(.signed-in):not(.signed-out) .empty-hero-signed-out { display: none; }
   font-style: italic;
   padding: 2px 0;
   text-align: center;
+}
+.cell.system .bubble.system-error {
+  color: var(--danger);
+  font-style: normal;
+  font-weight: 500;
+  border-left: 3px solid var(--danger);
+  padding: 4px 10px;
+  text-align: left;
+  background: rgba(255, 138, 154, 0.06);
+  border-radius: 4px;
+}
+.cell.system .system-action {
+  margin-top: 6px;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+}
+.cell.system .system-action:hover:not(:disabled) {
+  border-color: rgba(127, 168, 255, 0.32);
+  background: rgba(127, 168, 255, 0.08);
+}
+.cell.system .system-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* -----------------------------------------------
+   Thinking indicator (shown while a turn is in flight)
+   ----------------------------------------------- */
+.turn-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 24px 16px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  width: fit-content;
+}
+.turn-thinking-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.turn-thinking-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+  animation: turn-thinking-bounce 1.2s infinite ease-in-out;
+}
+.turn-thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+.turn-thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes turn-thinking-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+  40% { transform: translateY(-3px); opacity: 0.9; }
 }
 
 /* -----------------------------------------------
@@ -2685,6 +2779,16 @@ button.diff-expand-all:hover {
 .ac-item.selected {
   background: linear-gradient(180deg, rgba(127, 168, 255, 0.14), rgba(127, 168, 255, 0.06));
   color: var(--text);
+}
+.ac-item.disabled {
+  color: var(--muted);
+  font-style: italic;
+  cursor: default;
+  background: transparent;
+}
+.ac-item.disabled:hover {
+  background: transparent;
+  color: var(--muted);
 }
 .ac-item .ac-desc {
   color: var(--muted);

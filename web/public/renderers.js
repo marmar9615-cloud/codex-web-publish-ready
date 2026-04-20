@@ -51,6 +51,7 @@ export function createRenderers({
   onRollbackToItem,
   onEditItem,
   onForkFromItem,
+  onRetryFromItem,
   openLogin,
   scrollToBottom,
   hydrateWorkdirMedia,
@@ -255,12 +256,32 @@ export function createRenderers({
     clearAuthRequiredCard();
   }
 
-  function appendSystem(text, kind = "info") {
+  function appendSystem(text, kind = "info", options = {}) {
     const cell = el("div", { class: "cell system" });
     const bubble = el("div", { class: "bubble" });
     bubble.textContent = text;
-    if (kind === "error") bubble.style.color = "var(--danger)";
+    if (kind === "error") bubble.classList.add("system-error");
     cell.appendChild(bubble);
+    const action = options.action;
+    if (action && typeof action.onClick === "function") {
+      const button = el("button", {
+        class: "system-action",
+        type: "button",
+      });
+      button.textContent = action.label ?? "Retry";
+      if (action.title) button.setAttribute("title", action.title);
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        try {
+          action.onClick();
+        } finally {
+          setTimeout(() => {
+            button.disabled = false;
+          }, 500);
+        }
+      });
+      cell.appendChild(button);
+    }
     $("#transcript").appendChild(cell);
     scrollToBottom();
   }
@@ -279,6 +300,10 @@ export function createRenderers({
       entry.el.replaceWith(replacement);
       entry.el = replacement;
     }
+    // Keep the "Codex is working…" indicator pinned to the bottom while a
+    // turn is streaming, so the user has a trailing cue that more is coming.
+    const thinking = transcript.querySelector(".turn-thinking");
+    if (thinking && state.inFlight) transcript.appendChild(thinking);
     afterUpsertItem?.(item, isStart, isComplete);
     scrollToBottom();
   }
@@ -337,40 +362,80 @@ export function createRenderers({
     const turnIndex = state.itemTurnIndex.get(item.id);
     if (turnIndex != null && turnIndex >= 0) {
       const tools = el("div", { class: "msg-tools" });
-      const makeBtn = (label, title, handler) => {
+      const makeIconBtn = (label, title, svg, handler) => {
         const btn = el("button", {
-          class: "msg-tool ghost",
+          class: "msg-tool-icon",
           type: "button",
           title,
+          "aria-label": label,
         });
-        btn.textContent = label;
+        btn.innerHTML = `${svg}<span class="msg-tool-label">${label}</span>`;
         btn.addEventListener("click", (event) => {
           event.stopPropagation();
-          handler();
+          handler(btn);
         });
         return btn;
       };
+      const copyIcon =
+        '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M5.5 2.5h6A1.5 1.5 0 0 1 13 4v8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><rect x="2.5" y="4.5" width="8" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+      const editIcon =
+        '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M10.5 2.5l3 3-8 8H2.5v-3l8-8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      const forkIcon =
+        '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="3.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="12.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 5.2v2.3A2 2 0 0 0 6 9.5h4a2 2 0 0 0 2-2V5.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M8 9.5v1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+      const rollbackIcon =
+        '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3 7V3m0 4h4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 7c1.6-2.3 4.2-3.5 7-3 3.3.6 5.5 3.7 5 7-.6 3.3-3.7 5.5-7 5-2.7-.4-4.7-2.6-5-5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+      const retryIcon =
+        '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 3v2.5H10.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      tools.appendChild(
+        makeIconBtn("Copy", "Copy this message", copyIcon, async (btn) => {
+          const text = (item.content ?? [])
+            .filter((part) => part.type === "text")
+            .map((part) => part.text ?? "")
+            .join("\n\n");
+          try {
+            await navigator.clipboard.writeText(text);
+            btn.classList.add("msg-tool-icon-ok");
+            setTimeout(() => btn.classList.remove("msg-tool-icon-ok"), 900);
+          } catch {
+            // Clipboard can be denied in some contexts — fail silently.
+          }
+        }),
+      );
       if (onEditItem) {
         tools.appendChild(
-          makeBtn("Edit", "Edit this message and resend", () =>
+          makeIconBtn("Edit", "Edit this message and resend", editIcon, () =>
             onEditItem(item.id),
           ),
         );
       }
       if (onForkFromItem) {
         tools.appendChild(
-          makeBtn(
+          makeIconBtn(
             "Fork",
             "Fork the thread at this point into a new conversation",
+            forkIcon,
             () => onForkFromItem(item.id),
           ),
         );
       }
       tools.appendChild(
-        makeBtn("Rollback", "Drop later turns and keep this one", () =>
-          onRollbackToItem(item.id),
+        makeIconBtn(
+          "Rollback",
+          "Drop later turns and keep this one",
+          rollbackIcon,
+          () => onRollbackToItem(item.id),
         ),
       );
+      if (typeof onRetryFromItem === "function") {
+        tools.appendChild(
+          makeIconBtn(
+            "Retry",
+            "Resend this message as a new turn",
+            retryIcon,
+            () => onRetryFromItem(item.id),
+          ),
+        );
+      }
       bubble.appendChild(tools);
     }
     cell.appendChild(bubble);

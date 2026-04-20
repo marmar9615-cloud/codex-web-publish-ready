@@ -27,6 +27,7 @@ import { createRpc } from "./rpc.js";
 import { createCommandHandler } from "./commands.js";
 
 let transcriptAutoScroll = true;
+let lastSubmittedTurn = null;
 
 function isTranscriptNearBottom() {
   const transcript = $("#transcript");
@@ -67,6 +68,32 @@ function setInFlight(value) {
   state.inFlight = value;
   $("#cancel-btn").hidden = !value;
   $("#send-btn").disabled = value;
+  if (value) showThinkingIndicator();
+  else hideThinkingIndicator();
+}
+
+function showThinkingIndicator() {
+  const transcript = $("#transcript");
+  if (!transcript) return;
+  // Don't add duplicates — just keep the existing one pinned to the bottom.
+  let existing = transcript.querySelector(".turn-thinking");
+  if (!existing) {
+    existing = document.createElement("div");
+    existing.className = "turn-thinking";
+    existing.setAttribute("role", "status");
+    existing.setAttribute("aria-live", "polite");
+    existing.innerHTML =
+      '<span class="turn-thinking-dots" aria-hidden="true"><span></span><span></span><span></span></span>' +
+      '<span class="turn-thinking-label">Codex is working…</span>';
+  }
+  transcript.appendChild(existing);
+  scrollToBottom();
+}
+
+function hideThinkingIndicator() {
+  const transcript = $("#transcript");
+  const existing = transcript?.querySelector(".turn-thinking");
+  if (existing) existing.remove();
 }
 
 function autoGrow(textarea) {
@@ -124,6 +151,7 @@ const renderers = createRenderers({
   onRollbackToItem: (itemId) => rollbackToItem(itemId),
   onEditItem: (itemId) => void editAndResendItem(itemId),
   onForkFromItem: (itemId) => void forkFromItem(itemId),
+  onRetryFromItem: (itemId) => void retryFromItem(itemId),
   openLogin: () => modals.openLogin(),
   scrollToBottom,
   hydrateWorkdirMedia,
@@ -228,6 +256,8 @@ notificationHandlers = createNotificationHandlers({
   onPlanUpdated: (params) => todoPane.update(params),
   onFsChanged: (params) => void fileTree.handleFsChanged(params),
   onStandaloneCommandDelta,
+  retryLastTurn,
+  canRetryLastTurn,
 });
 
 const handleSlash = createCommandHandler({
@@ -254,17 +284,22 @@ const handleSlash = createCommandHandler({
 
 async function bootstrap() {
   applyPersistedSidebarState();
+  // Wire the Files/Todos toggle handlers and set their initial visibility
+  // BEFORE the network fetches below — otherwise a user clicking during the
+  // first few hundred ms lands on an unbound button and the first click is
+  // silently dropped (next click works, producing the "two clicks to open"
+  // bug reported in audit #8).
+  fileTree.init();
+  todoPane.init();
   await refreshWhoAmI();
   await refreshProjects();
   await refreshThreads();
   bindUi();
   renderComposerMode();
-  fileTree.init();
   livePreview.init();
   mobilePreview.init();
   terminal.init();
   testRunner.init();
-  todoPane.init();
   subagentPane.init();
   window.addEventListener("codex:planUpdated", (event) => {
     todoPane.update(event.detail ?? {});
@@ -745,6 +780,13 @@ async function editAndResendItem(itemId) {
   try {
     input.setSelectionRange(input.value.length, input.value.length);
   } catch {}
+}
+
+async function retryFromItem(itemId) {
+  const text = getUserMessageText(itemId);
+  if (!text) return;
+  await rollbackToItem(itemId);
+  void startTurn(text, { uploads: [], isRetry: true });
 }
 
 async function forkFromItem(itemId) {
@@ -1536,6 +1578,14 @@ async function onInput(event) {
   const mentionMatch = /(^|\s)@([A-Za-z0-9_\-./]*)$/.exec(textBeforeCursor);
   if (mentionMatch) {
     const query = mentionMatch[2];
+    const anchorStart = position - query.length - 1;
+    // Show a placeholder row immediately so the user knows the trigger is
+    // registered — otherwise an empty workdir silently eats the `@` keystroke.
+    showAutocomplete({
+      kind: "file",
+      items: [{ name: "Searching files…", desc: "", disabled: true }],
+      anchorStart,
+    });
     try {
       const response = await fetch("/api/file-search", {
         method: "POST",
@@ -1543,17 +1593,26 @@ async function onInput(event) {
         body: JSON.stringify({ query }),
       });
       const data = await response.json();
-      const items = (data.results ?? []).map((path) => ({
-        name: `@${path}`,
-        desc: "file",
-      }));
+      const results = data.results ?? [];
+      const items = results.length
+        ? results.map((path) => ({ name: `@${path}`, desc: "file" }))
+        : [
+            {
+              name: query ? `No files match "${query}"` : "No files in workspace",
+              desc: "",
+              disabled: true,
+            },
+          ];
+      showAutocomplete({ kind: "file", items, anchorStart });
+    } catch (error) {
+      console.warn("file-search failed", error);
       showAutocomplete({
         kind: "file",
-        items,
-        anchorStart: position - query.length - 1,
+        items: [
+          { name: "File search unavailable", desc: "", disabled: true },
+        ],
+        anchorStart,
       });
-    } catch {
-      hideAutocomplete();
     }
     return;
   }
@@ -1566,12 +1625,16 @@ function showAutocomplete({ kind, items, anchorStart }) {
     hideAutocomplete();
     return;
   }
-  setAutocompleteState({ kind, items, selected: 0, anchorStart });
+  const firstSelectable = items.findIndex((item) => !item.disabled);
+  const initialSelected = firstSelectable >= 0 ? firstSelectable : 0;
+  setAutocompleteState({ kind, items, selected: initialSelected, anchorStart });
   const itemsHtml = items
-    .map(
-      (item, index) =>
-        `<div class="ac-item ${index === 0 ? "selected" : ""}" data-idx="${index}">${escapeHtml(item.name)}<span class="ac-desc">${escapeHtml(item.desc ?? "")}</span></div>`,
-    )
+    .map((item, index) => {
+      const classes = ["ac-item"];
+      if (index === initialSelected && !item.disabled) classes.push("selected");
+      if (item.disabled) classes.push("disabled");
+      return `<div class="${classes.join(" ")}" data-idx="${index}">${escapeHtml(item.name)}<span class="ac-desc">${escapeHtml(item.desc ?? "")}</span></div>`;
+    })
     .join("");
   const footerHtml =
     '<div class="ac-footer">' +
@@ -1584,7 +1647,9 @@ function showAutocomplete({ kind, items, anchorStart }) {
   autocomplete.querySelectorAll(".ac-item").forEach((node) => {
     node.addEventListener("click", () => {
       const current = getAutocompleteState();
-      setAutocompleteState({ ...current, selected: Number(node.dataset.idx) });
+      const idx = Number(node.dataset.idx);
+      if (current.items[idx]?.disabled) return;
+      setAutocompleteState({ ...current, selected: idx });
       acceptAutocomplete();
     });
   });
@@ -1600,7 +1665,7 @@ function hideAutocomplete() {
 function acceptAutocomplete() {
   const autocompleteState = getAutocompleteState();
   const item = autocompleteState.items[autocompleteState.selected];
-  if (!item) return;
+  if (!item || item.disabled) return;
   const input = $("#input");
   const before = input.value.slice(0, autocompleteState.anchorStart);
   const after = input.value.slice(input.selectionStart);
@@ -1612,13 +1677,20 @@ function acceptAutocomplete() {
 }
 
 function moveSelection(delta) {
-  const items = $$("#autocomplete .ac-item");
-  if (!items.length) return;
+  const nodes = $$("#autocomplete .ac-item");
+  if (!nodes.length) return;
   const autocompleteState = getAutocompleteState();
-  const selected =
-    (autocompleteState.selected + delta + items.length) % items.length;
+  const modelItems = autocompleteState.items;
+  // Skip disabled entries when navigating; if all are disabled, bail.
+  const hasSelectable = modelItems.some((item) => !item.disabled);
+  if (!hasSelectable) return;
+  let selected = autocompleteState.selected;
+  for (let step = 0; step < modelItems.length; step += 1) {
+    selected = (selected + delta + modelItems.length) % modelItems.length;
+    if (!modelItems[selected]?.disabled) break;
+  }
   setAutocompleteState({ ...autocompleteState, selected });
-  items.forEach((node, index) => {
+  nodes.forEach((node, index) => {
     node.classList.toggle("selected", index === selected);
   });
 }
@@ -1691,8 +1763,10 @@ function buildCollaborationMode() {
   };
 }
 
-async function startTurn(text) {
+async function startTurn(text, options = {}) {
   setInFlight(true);
+  const uploadsSnapshot = options.uploads ?? [...state.pendingUploads];
+  lastSubmittedTurn = { text, uploads: uploadsSnapshot };
   try {
     let threadId = state.activeThreadId;
     if (!threadId) {
@@ -1710,7 +1784,7 @@ async function startTurn(text) {
     const input = [];
     if (text) input.push({ type: "text", text, text_elements: [] });
     input.push(
-      ...state.pendingUploads.map((upload) => ({
+      ...uploadsSnapshot.map((upload) => ({
         type: "localImage",
         path: upload.path,
       })),
@@ -1720,16 +1794,36 @@ async function startTurn(text) {
       input,
       collaborationMode: buildCollaborationMode(),
     });
-    state.pendingUploads = [];
-    uploads.renderPendingUploads();
+    if (!options.isRetry) {
+      state.pendingUploads = [];
+      uploads.renderPendingUploads();
+    }
   } catch (error) {
     setInFlight(false);
     if (isAuthErrorMessage(error.message)) {
       renderers.showAuthRequiredCard(error.message);
       return;
     }
-    renderers.appendSystem(`✗ ${error.message}`, "error");
+    renderers.appendSystem(`✗ ${error.message}`, "error", {
+      action: canRetryLastTurn()
+        ? { label: "Retry", onClick: retryLastTurn }
+        : null,
+    });
   }
+}
+
+function canRetryLastTurn() {
+  if (!lastSubmittedTurn) return false;
+  if (state.inFlight) return false;
+  return Boolean(
+    lastSubmittedTurn.text || (lastSubmittedTurn.uploads ?? []).length,
+  );
+}
+
+function retryLastTurn() {
+  if (!canRetryLastTurn()) return;
+  const { text, uploads } = lastSubmittedTurn;
+  void startTurn(text, { uploads, isRetry: true });
 }
 
 async function interruptTurn() {

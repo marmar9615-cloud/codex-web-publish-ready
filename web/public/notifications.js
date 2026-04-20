@@ -51,7 +51,13 @@ export function createNotificationHandlers({
   onPlanUpdated,
   onFsChanged,
   onStandaloneCommandDelta,
+  retryLastTurn,
+  canRetryLastTurn,
 }) {
+  const retryAction = () =>
+    typeof canRetryLastTurn === "function" && canRetryLastTurn()
+      ? { label: "Retry", onClick: retryLastTurn }
+      : null;
   async function refreshChatgptAuthTokens(message) {
     try {
       const response = await fetch("/api/oauth/chatgpt/refresh", {
@@ -183,7 +189,9 @@ export function createNotificationHandlers({
           showAuthRequiredCard(params.error?.message);
           return;
         }
-        appendSystem(`✗ ${params.error?.message ?? "turn failed"}`, "error");
+        appendSystem(`✗ ${params.error?.message ?? "turn failed"}`, "error", {
+          action: retryAction(),
+        });
         return;
       case "item/started":
         upsertItem(params.item, true, false);
@@ -371,6 +379,8 @@ export function createNotificationHandlers({
         appendSystem(
           `✗ ${params.error?.message ?? "error"}${params.willRetry ? " (retrying)" : ""}`,
           "error",
+          // Only offer Retry when the backend isn't already retrying on its own.
+          params.willRetry ? {} : { action: retryAction() },
         );
         return;
       case "hook/started":

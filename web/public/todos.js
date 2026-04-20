@@ -29,6 +29,15 @@ export function createTodoPane() {
     const toggle = $("#todo-toggle-btn");
     if (toggle) {
       toggle.textContent = pane.hidden ? "Todos" : "Hide todos";
+      toggle.setAttribute("aria-pressed", pane.hidden ? "false" : "true");
+      toggle.setAttribute(
+        "title",
+        hasPlan
+          ? pane.hidden
+            ? "Show the latest plan"
+            : "Hide the plan"
+          : "Codex will populate this once it starts a plan",
+      );
     }
   }
 
@@ -96,6 +105,24 @@ export function createTodoPane() {
 
   function init() {
     $("#todo-toggle-btn")?.addEventListener("click", () => {
+      const hasPlan = Boolean(state.plan?.plan?.length);
+      if (!hasPlan) {
+        // Nothing to show yet — give visible feedback rather than silently
+        // flipping internal state. The toggle is "armed"; as soon as the
+        // next plan update lands it will appear.
+        todoUi.visible = true;
+        persistUi();
+        applyVisibility();
+        import("./toast.js")
+          .then(({ showToast }) =>
+            showToast(
+              "No plan yet. Todos will appear here as Codex plans a turn.",
+              "info",
+            ),
+          )
+          .catch(() => {});
+        return;
+      }
       todoUi.visible = !todoUi.visible;
       persistUi();
       applyVisibility();
