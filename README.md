@@ -1,13 +1,13 @@
 # Codex Web
 
-A production-grade browser UI for the Rust `codex app-server` — chat, diffs,
+A production-grade browser UI for the Rust `codex app-server` -- chat, diffs,
 files, terminal, preview, and one-click deploys, all in one tab.
 
 **Live:** [codex-web-zkqj.onrender.com](https://codex-web-zkqj.onrender.com)
 
 <p align="center">
   <img src="./.github/screenshots/00-hero.png"
-       alt="Codex Web — signed-out welcome hero with project sidebar, workspace tabs, and embedded terminal"
+       alt="Codex Web -- signed-out welcome hero with project sidebar, workspace tabs, and embedded terminal"
        width="100%" />
 </p>
 
@@ -35,7 +35,7 @@ experience and adds a full project workspace around it.
 
 ### Chat & agent loop
 
-- Real `codex app-server` v2 transport over HTTP + WebSocket — no mock mode
+- Real `codex app-server` v2 transport over HTTP + WebSocket -- no mock mode
 - Streaming agent output with collapsible reasoning blocks and effort badges
 - Rich per-file diff cards with add/remove counts and per-file approvals
 - Exec approval cards with once / session / deny decisions
@@ -44,7 +44,7 @@ experience and adds a full project workspace around it.
 
 ### Composer & productivity
 
-- ⌘K command palette: fuzzy-search every slash command in one keystroke
+- `Cmd+K` command palette: fuzzy-search every slash command in one keystroke
 - `/` slash-command autocomplete with inline descriptions and keybind hints
 - `@` file-reference autocomplete backed by server-side fuzzy search
 - Drag-and-drop attachments, paste-from-clipboard, rich image thumbnails
@@ -58,7 +58,7 @@ experience and adds a full project workspace around it.
 - Thread list with search, pinning, archive/unarchive, rename, duplicate,
   export-as-JSON, and right-click context menu
 - Thread resume / fork / rollback flows backed by real app-server RPCs
-- Shared thread replay links — send a read-only URL, recipient sees the
+- Shared thread replay links -- send a read-only URL, recipient sees the
   timeline without a composer
 - Rewind and re-run any turn with edited context
 
@@ -77,7 +77,7 @@ experience and adds a full project workspace around it.
 
 - GitHub OAuth sign-in, repo picker, clone / commit / push / PR
 - One-click deploys: Render, Vercel, Netlify, Cloudflare Pages
-- Ship-it pipeline: tests → build → deploy → git tag → changelog
+- Ship-it pipeline: tests -> build -> deploy -> git tag -> changelog
 - Render log-tail panel inside project tools
 - Monitoring panel stubs for Sentry / PostHog one-click inject
 
@@ -108,7 +108,7 @@ experience and adds a full project workspace around it.
        width="100%" />
 </p>
 
-### Command palette (⌘K)
+### Command palette (Cmd+K)
 
 <p align="center">
   <img src="./.github/screenshots/02-command-palette.png"
@@ -116,7 +116,7 @@ experience and adds a full project workspace around it.
        width="100%" />
 </p>
 
-### Workspace — terminal tab
+### Workspace -- terminal tab
 
 <p align="center">
   <img src="./.github/screenshots/03-workspace-terminal.png"
@@ -124,7 +124,7 @@ experience and adds a full project workspace around it.
        width="100%" />
 </p>
 
-### Workspace — live preview
+### Workspace -- live preview
 
 <p align="center">
   <img src="./.github/screenshots/04-workspace-preview.png"
@@ -181,16 +181,16 @@ Render is first-class: inbound WebSockets, Docker deploys, persistent disks.
 
 This repo ships:
 
-- [`render.yaml`](./render.yaml) — Blueprint
-- [`web/Dockerfile.render`](./web/Dockerfile.render) — production image
-- `GET /healthz` — zero-downtime health endpoint
+- [`render.yaml`](./render.yaml) -- Blueprint
+- [`web/Dockerfile.render`](./web/Dockerfile.render) -- production image
+- `GET /healthz` -- zero-downtime health endpoint
 - 5 GB persistent disk mounted at `/var/data` for session workdirs + uploads
 - Generated `CODEX_WEB_FILE_SIGNING_SECRET` for signed preview URLs
 
 Launch flow:
 
 1. Push to GitHub.
-2. Render → New Blueprint → point at this repo.
+2. Render -> New Blueprint -> point at this repo.
 3. Accept the checked-in `render.yaml`.
 4. Wait for the Docker build (first Rust build: ~45 min).
 5. Open the generated `*.onrender.com` URL.
@@ -239,7 +239,7 @@ the repo picker, clone, commit, push, and PR flows.
 
 ## Testing
 
-Smoke suites run against a real backend — there is no mock mode.
+Smoke suites run against a real backend -- there is no mock mode.
 
 ```bash
 cd web
@@ -264,23 +264,23 @@ CODEX_BIN="$HOME/.local/bin/codex" \
 
 ```
 Browser
-  ├── Vanilla-JS frontend (web/public)
-  │   ├── WebSocket → /ws (JSON-RPC 2.0)
-  │   └── HTTP     → /api/* (session, auth, uploads, workdir files)
-  │
-  └── Node Express gateway (web/server.mjs)
-      ├── Owns session cookies + per-session workdirs
-      ├── Manages ChatGPT device-code + GitHub OAuth flows
-      ├── Signs workdir file URLs via HMAC
-      └── Spawns and proxies to →
-          │
-          └── Rust codex-app-server (codex-rs/app-server)
-              ├── Pure JSON-RPC 2.0
-              ├── MCP, hooks, skills, plugins, memory
-              └── Sandboxed tool runtime
+  |-- Vanilla-JS frontend (web/public)
+  |     |-- WebSocket -> /ws  (JSON-RPC 2.0)
+  |     `-- HTTP      -> /api/*  (session, auth, uploads, workdir files)
+  |
+  `-- Node Express gateway (web/server.mjs)
+        |-- Owns session cookies + per-session workdirs
+        |-- Manages ChatGPT device-code + GitHub OAuth flows
+        |-- Signs workdir file URLs via HMAC
+        `-- Spawns and proxies to ->
+              |
+              `-- Rust codex-app-server (codex-rs/app-server)
+                    |-- Pure JSON-RPC 2.0
+                    |-- MCP, hooks, skills, plugins, memory
+                    `-- Sandboxed tool runtime
 ```
 
-The gateway is a **transparent JSON-RPC proxy** — it does not decode or
+The gateway is a **transparent JSON-RPC proxy** -- it does not decode or
 rewrite agent traffic. Every message on the wire is a canonical
 app-server-protocol frame. The gateway only layers in session bookkeeping,
 auth, uploads, and signed workdir file serving.
