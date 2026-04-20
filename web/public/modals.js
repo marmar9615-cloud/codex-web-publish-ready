@@ -452,38 +452,60 @@ export function createModals({
 
   async function loadProjectDeployData() {
     const slug = state.whoami?.activeProjectSlug;
+    const emptyRender = {
+      configured: false,
+      hookLabel: null,
+      lastDeploy: null,
+      error: null,
+    };
+    const emptyVercel = {
+      configured: false,
+      hookLabel: null,
+      hasToken: false,
+      hasProjectId: false,
+      hasTeamId: false,
+      recent: null,
+      recentError: null,
+      lastDeploy: null,
+      error: null,
+    };
     if (!slug) {
       return {
         available: false,
         slug: null,
-        configured: false,
-        hookLabel: null,
-        lastDeploy: null,
-        error: null,
+        render: emptyRender,
+        vercel: emptyVercel,
       };
     }
-    try {
-      const data = await fetchProjectJson(
-        `/api/projects/${encodeURIComponent(slug)}/deploy/render`,
-      );
-      return {
-        available: true,
-        slug,
-        configured: Boolean(data.configured),
-        hookLabel: data.hookLabel ?? null,
-        lastDeploy: data.lastDeploy ?? null,
-        error: null,
-      };
-    } catch (error) {
-      return {
-        available: true,
-        slug,
-        configured: false,
-        hookLabel: null,
-        lastDeploy: null,
-        error: error.message,
-      };
-    }
+    const [renderData, vercelData] = await Promise.all([
+      fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/render`)
+        .then((data) => ({
+          configured: Boolean(data.configured),
+          hookLabel: data.hookLabel ?? null,
+          lastDeploy: data.lastDeploy ?? null,
+          error: null,
+        }))
+        .catch((error) => ({ ...emptyRender, error: error.message })),
+      fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/vercel`)
+        .then((data) => ({
+          configured: Boolean(data.configured),
+          hookLabel: data.hookLabel ?? null,
+          hasToken: Boolean(data.hasToken),
+          hasProjectId: Boolean(data.hasProjectId),
+          hasTeamId: Boolean(data.hasTeamId),
+          recent: Array.isArray(data.recent) ? data.recent : null,
+          recentError: data.recentError ?? null,
+          lastDeploy: data.lastDeploy ?? null,
+          error: null,
+        }))
+        .catch((error) => ({ ...emptyVercel, error: error.message })),
+    ]);
+    return {
+      available: true,
+      slug,
+      render: renderData,
+      vercel: vercelData,
+    };
   }
 
   async function loadProjectLogsData() {
@@ -695,41 +717,150 @@ export function createModals({
     if (!deployData.available) {
       return '<div class="manager-empty">Activate a named project from the sidebar before configuring deploy hooks.</div>';
     }
-    if (deployData.error) {
-      return `<div class="manager-empty">Deploy panel failed to load: ${escapeHtml(deployData.error)}</div>`;
-    }
-    const lastDeploy = deployData.lastDeploy ?? {};
-    const lastTime = lastDeploy.lastTriggeredAt
-      ? new Date(lastDeploy.lastTriggeredAt).toLocaleString()
+    const render = deployData.render ?? {};
+    const vercel = deployData.vercel ?? {};
+    const renderLast = render.lastDeploy ?? {};
+    const renderLastTime = renderLast.lastTriggeredAt
+      ? new Date(renderLast.lastTriggeredAt).toLocaleString()
       : "Never";
+    const vercelLast = vercel.lastDeploy ?? {};
+    const vercelLastTime = vercelLast.lastTriggeredAt
+      ? new Date(vercelLast.lastTriggeredAt).toLocaleString()
+      : "Never";
+    const renderError = render.error
+      ? `<div class="manager-note manager-note-error">Render panel: ${escapeHtml(render.error)}</div>`
+      : "";
+    const vercelError = vercel.error
+      ? `<div class="manager-note manager-note-error">Vercel panel: ${escapeHtml(vercel.error)}</div>`
+      : "";
     return `
-      <p class="settings-copy">This project can trigger a Render sync hook directly from the browser. The hook URL is stored in encrypted project secrets as <code>RENDER_SYNC_HOOK_URL</code>.</p>
-      <div class="modal-row">
-        <label>Render sync hook URL</label>
-        <input id="render-hook-url" placeholder="https://api.render.com/sync/..." />
-      </div>
-      <div class="modal-actions modal-actions-left">
-        <button id="render-hook-save" type="button">Save hook</button>
-        <button id="render-hook-refresh" type="button">Refresh</button>
-        <button id="render-hook-trigger" type="button" class="primary" ${deployData.configured ? "" : "disabled"}>Trigger deploy</button>
-      </div>
-      <div class="manager-list">
-        <article class="manager-card">
+      ${renderError}
+      ${vercelError}
+
+      <section class="deploy-provider">
+        <header class="deploy-provider-head">
+          <h3>Render</h3>
+          <div class="manager-meta">${render.configured ? escapeHtml(render.hookLabel ?? "configured") : "not configured"}</div>
+        </header>
+        <p class="settings-copy">Triggers a Render sync hook. Hook URL is stored as <code>RENDER_SYNC_HOOK_URL</code>.</p>
+        <div class="modal-row">
+          <label>Render sync hook URL</label>
+          <input id="render-hook-url" placeholder="https://api.render.com/sync/..." />
+        </div>
+        <div class="modal-actions modal-actions-left">
+          <button id="render-hook-save" type="button">Save hook</button>
+          <button id="render-hook-refresh" type="button">Refresh</button>
+          <button id="render-hook-trigger" type="button" class="primary" ${render.configured ? "" : "disabled"}>Trigger deploy</button>
+        </div>
+        <div class="manager-card">
           <div class="manager-card-head">
             <div>
-              <h3>Render deploy hook</h3>
-              <div class="manager-meta">${deployData.configured ? escapeHtml(deployData.hookLabel ?? "configured") : "not configured"}</div>
+              <h4>Last trigger</h4>
+              <div class="manager-meta">${escapeHtml(renderLastTime)}${renderLast.lastStatus ? ` · status ${renderLast.lastStatus}` : ""}</div>
             </div>
-            <div class="manager-meta">Last trigger: ${escapeHtml(lastTime)}</div>
           </div>
           ${
-            lastDeploy.lastResponseText
-              ? `<pre>${escapeHtml(lastDeploy.lastResponseText)}</pre>`
+            renderLast.lastResponseText
+              ? `<pre>${escapeHtml(renderLast.lastResponseText)}</pre>`
               : '<div class="manager-blurb">No deploys have been triggered from this project yet.</div>'
           }
-        </article>
-      </div>
+        </div>
+      </section>
+
+      <section class="deploy-provider">
+        <header class="deploy-provider-head">
+          <h3>Vercel</h3>
+          <div class="manager-meta">${vercel.configured ? escapeHtml(vercel.hookLabel ?? "configured") : "not configured"}</div>
+        </header>
+        <p class="settings-copy">Triggers a Vercel deploy hook. Optionally add <code>VERCEL_TOKEN</code> + <code>VERCEL_PROJECT_ID</code> to show recent deployment status.</p>
+        <div class="modal-row">
+          <label>Vercel deploy hook URL</label>
+          <input id="vercel-hook-url" placeholder="https://api.vercel.com/v1/integrations/deploy/..." />
+        </div>
+        <div class="modal-row modal-row-split">
+          <div>
+            <label>Vercel API token (optional)</label>
+            <input id="vercel-token" type="password" placeholder="vercel_xxx…" autocomplete="off" ${vercel.hasToken ? 'data-has="true"' : ""} />
+            ${vercel.hasToken ? '<div class="manager-meta">Saved. Leave blank to keep; enter a new value to rotate.</div>' : ""}
+          </div>
+          <div>
+            <label>Project ID</label>
+            <input id="vercel-project-id" placeholder="prj_…" ${vercel.hasProjectId ? 'data-has="true"' : ""} />
+            ${vercel.hasProjectId ? '<div class="manager-meta">Saved.</div>' : ""}
+          </div>
+        </div>
+        <div class="modal-row">
+          <label>Team ID (optional, for team projects)</label>
+          <input id="vercel-team-id" placeholder="team_…" ${vercel.hasTeamId ? 'data-has="true"' : ""} />
+          ${vercel.hasTeamId ? '<div class="manager-meta">Saved.</div>' : ""}
+        </div>
+        <div class="modal-actions modal-actions-left">
+          <button id="vercel-save" type="button">Save config</button>
+          <button id="vercel-refresh" type="button">Refresh</button>
+          <button id="vercel-trigger" type="button" class="primary" ${vercel.configured ? "" : "disabled"}>Trigger deploy</button>
+        </div>
+        <div class="manager-card">
+          <div class="manager-card-head">
+            <div>
+              <h4>Last trigger</h4>
+              <div class="manager-meta">${escapeHtml(vercelLastTime)}${vercelLast.lastStatus ? ` · status ${vercelLast.lastStatus}` : ""}</div>
+            </div>
+          </div>
+          ${
+            vercelLast.lastResponseText
+              ? `<pre>${escapeHtml(vercelLast.lastResponseText)}</pre>`
+              : '<div class="manager-blurb">No deploys triggered from this project yet.</div>'
+          }
+        </div>
+        ${renderVercelRecent(vercel)}
+      </section>
+
       <div id="project-deploy-feedback" class="manager-note" hidden></div>
+    `;
+  }
+
+  function renderVercelRecent(vercel) {
+    if (vercel.recentError) {
+      return `<div class="manager-note manager-note-error">Recent deployments: ${escapeHtml(vercel.recentError)}</div>`;
+    }
+    if (!vercel.recent) {
+      return "";
+    }
+    if (!vercel.recent.length) {
+      return '<div class="manager-blurb">No recent Vercel deployments for this project id.</div>';
+    }
+    return `
+      <div class="manager-list vercel-recent">
+        ${vercel.recent
+          .map((deploy) => {
+            const ts = deploy.createdAt
+              ? new Date(deploy.createdAt).toLocaleString()
+              : "";
+            const url = deploy.url ? `https://${deploy.url}` : "";
+            const stateClass = (deploy.state ?? "").toLowerCase();
+            return `
+              <article class="manager-card vercel-deploy vercel-state-${escapeHtml(stateClass || "unknown")}">
+                <div class="manager-card-head">
+                  <div>
+                    <h4>${escapeHtml(deploy.target ?? "preview")} · ${escapeHtml(deploy.branch ?? "—")}</h4>
+                    <div class="manager-meta">${escapeHtml(ts)}${deploy.state ? ` · ${escapeHtml(deploy.state)}` : ""}</div>
+                  </div>
+                  ${
+                    url
+                      ? `<a class="button-link" target="_blank" rel="noopener" href="${escapeHtml(url)}">Open</a>`
+                      : ""
+                  }
+                </div>
+                ${
+                  deploy.commitMessage
+                    ? `<div class="manager-blurb">${escapeHtml(deploy.commitMessage)}</div>`
+                    : ""
+                }
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
     `;
   }
 
@@ -1150,7 +1281,7 @@ export function createModals({
             try {
               const syncHookUrl =
                 mount.querySelector("#render-hook-url")?.value.trim() ?? "";
-              const data = await fetchProjectJson(
+              await fetchProjectJson(
                 `/api/projects/${encodeURIComponent(slug)}/deploy/render/config`,
                 {
                   method: "POST",
@@ -1158,12 +1289,8 @@ export function createModals({
                   body: JSON.stringify({ syncHookUrl }),
                 },
               );
-              currentDeployData = {
-                ...currentDeployData,
-                ...(data.deploy ?? {}),
-              };
-              setFeedback("#project-deploy-feedback", syncHookUrl ? "Hook saved." : "Hook cleared.");
-              await refreshAll();
+              setFeedback("#project-deploy-feedback", syncHookUrl ? "Render hook saved." : "Render hook cleared.");
+              await refreshDeploy();
             } catch (error) {
               setFeedback("#project-deploy-feedback", error.message, "error");
               appendSystem(`render hook save failed: ${error.message}`, "error");
@@ -1179,16 +1306,80 @@ export function createModals({
             try {
               const data = await fetchProjectJson(
                 `/api/projects/${encodeURIComponent(slug)}/deploy/render/trigger`,
-                {
-                  method: "POST",
-                },
+                { method: "POST" },
               );
-              setFeedback("#project-deploy-feedback", data.deploy?.responseText ?? "Deploy triggered.");
+              setFeedback("#project-deploy-feedback", data.deploy?.responseText ?? "Render deploy triggered.");
               showToast("Render sync hook triggered.", "success");
-              await refreshAll();
+              await refreshDeploy();
             } catch (error) {
               setFeedback("#project-deploy-feedback", error.message, "error");
               appendSystem(`render deploy failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+
+          mount.querySelector("#vercel-refresh")?.addEventListener("click", () => {
+            void refreshDeploy();
+          });
+          mount.querySelector("#vercel-save")?.addEventListener("click", async () => {
+            const slug = currentDeployData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#vercel-save");
+            button.disabled = true;
+            try {
+              const payload = {
+                deployHookUrl:
+                  mount.querySelector("#vercel-hook-url")?.value.trim() ?? "",
+              };
+              const tokenInput = mount.querySelector("#vercel-token");
+              if (tokenInput && tokenInput.value !== "") {
+                payload.token = tokenInput.value;
+              }
+              const projectIdInput = mount.querySelector("#vercel-project-id");
+              if (projectIdInput && projectIdInput.value !== "") {
+                payload.projectId = projectIdInput.value;
+              }
+              const teamIdInput = mount.querySelector("#vercel-team-id");
+              if (teamIdInput && teamIdInput.value !== "") {
+                payload.teamId = teamIdInput.value;
+              }
+              await fetchProjectJson(
+                `/api/projects/${encodeURIComponent(slug)}/deploy/vercel/config`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload),
+                },
+              );
+              setFeedback("#project-deploy-feedback", "Vercel config saved.");
+              await refreshDeploy();
+            } catch (error) {
+              setFeedback("#project-deploy-feedback", error.message, "error");
+              appendSystem(`vercel config save failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+          mount.querySelector("#vercel-trigger")?.addEventListener("click", async () => {
+            const slug = currentDeployData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#vercel-trigger");
+            button.disabled = true;
+            try {
+              const data = await fetchProjectJson(
+                `/api/projects/${encodeURIComponent(slug)}/deploy/vercel/trigger`,
+                { method: "POST" },
+              );
+              setFeedback(
+                "#project-deploy-feedback",
+                data.deploy?.responseText ?? "Vercel deploy triggered.",
+              );
+              showToast("Vercel deploy hook triggered.", "success");
+              await refreshDeploy();
+            } catch (error) {
+              setFeedback("#project-deploy-feedback", error.message, "error");
+              appendSystem(`vercel deploy failed: ${error.message}`, "error");
             } finally {
               button.disabled = false;
             }

@@ -1285,6 +1285,85 @@ app.post(
   },
 );
 
+app.get("/api/projects/:slug/deploy/vercel", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  try {
+    res.json(await loadVercelDeployState(slug));
+  } catch (error) {
+    res.status(502).json({ error: error.message });
+  }
+});
+
+app.post(
+  "/api/projects/:slug/deploy/vercel/config",
+  sameOriginOnly,
+  async (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    if (!getProjectSecretsCipherKey()) {
+      res.status(503).json({ error: "CODEX_WEB_SECRETS_KEY is not configured" });
+      return;
+    }
+    const secrets = readProjectSecrets(slug);
+    const setOrDelete = (key, value) => {
+      const trimmed = typeof value === "string" ? value.trim() : "";
+      if (trimmed) {
+        secrets[key] = trimmed;
+      } else if (value === "" || value === null) {
+        delete secrets[key];
+      }
+    };
+    if ("deployHookUrl" in (req.body ?? {})) {
+      setOrDelete("VERCEL_DEPLOY_HOOK_URL", req.body.deployHookUrl);
+    }
+    if ("token" in (req.body ?? {})) {
+      setOrDelete("VERCEL_TOKEN", req.body.token);
+    }
+    if ("projectId" in (req.body ?? {})) {
+      setOrDelete("VERCEL_PROJECT_ID", req.body.projectId);
+    }
+    if ("teamId" in (req.body ?? {})) {
+      setOrDelete("VERCEL_TEAM_ID", req.body.teamId);
+    }
+    writeProjectSecrets(slug, secrets);
+    try {
+      res.json({ ok: true, deploy: await loadVercelDeployState(slug) });
+    } catch (error) {
+      res.status(502).json({ error: error.message });
+    }
+  },
+);
+
+app.post(
+  "/api/projects/:slug/deploy/vercel/trigger",
+  sameOriginOnly,
+  async (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    try {
+      res.json({ ok: true, deploy: await triggerVercelDeploy(slug) });
+    } catch (error) {
+      res.status(502).json({ error: error.message });
+    }
+  },
+);
+
 app.get(
   "/api/projects/:slug/logs/render",
   sameOriginOnly,
@@ -2409,6 +2488,38 @@ function getRenderServiceId(slug) {
   );
 }
 
+function getVercelDeployHookUrl(slug) {
+  return (
+    getProjectSecretValue(slug, "VERCEL_DEPLOY_HOOK_URL") ??
+    process.env.CODEX_WEB_VERCEL_DEPLOY_HOOK_URL ??
+    null
+  );
+}
+
+function getVercelToken(slug) {
+  return (
+    getProjectSecretValue(slug, "VERCEL_TOKEN") ??
+    process.env.CODEX_WEB_VERCEL_TOKEN ??
+    null
+  );
+}
+
+function getVercelProjectId(slug) {
+  return (
+    getProjectSecretValue(slug, "VERCEL_PROJECT_ID") ??
+    process.env.CODEX_WEB_VERCEL_PROJECT_ID ??
+    null
+  );
+}
+
+function getVercelTeamId(slug) {
+  return (
+    getProjectSecretValue(slug, "VERCEL_TEAM_ID") ??
+    process.env.CODEX_WEB_VERCEL_TEAM_ID ??
+    null
+  );
+}
+
 function redactHookUrl(url) {
   if (!url) return null;
   try {
@@ -2755,6 +2866,100 @@ async function triggerRenderSync(slug) {
     status: response.status,
     responseText: truncateOutput(text, 1500),
     deploy: project.deploy?.render ?? null,
+  };
+}
+
+async function loadVercelDeployState(slug) {
+  const project = readProjectMetadata(projectDirForSlug(slug), slug);
+  const lastDeploy = project.deploy?.vercel ?? {};
+  const hookUrl = getVercelDeployHookUrl(slug);
+  const token = getVercelToken(slug);
+  const projectId = getVercelProjectId(slug);
+  const teamId = getVercelTeamId(slug);
+  let recent = null;
+  let recentError = null;
+  if (token && projectId) {
+    try {
+      const params = new URLSearchParams();
+      params.append("projectId", projectId);
+      params.append("limit", "5");
+      if (teamId) params.append("teamId", teamId);
+      const response = await fetch(
+        `https://api.vercel.com/v6/deployments?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) {
+        recentError = `Vercel API returned ${response.status}: ${truncateOutput(text, 300)}`;
+      } else {
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { deployments: [] };
+        }
+        recent = (data.deployments ?? []).slice(0, 5).map((d) => ({
+          uid: d.uid ?? null,
+          url: d.url ?? null,
+          state: d.state ?? d.readyState ?? null,
+          createdAt: d.created ?? d.createdAt ?? null,
+          target: d.target ?? null,
+          branch: d.meta?.githubCommitRef ?? d.meta?.gitBranch ?? null,
+          commitMessage: d.meta?.githubCommitMessage ?? d.meta?.gitMessage ?? null,
+        }));
+      }
+    } catch (error) {
+      recentError = error.message;
+    }
+  }
+  return {
+    configured: Boolean(hookUrl),
+    hookLabel: redactHookUrl(hookUrl),
+    hasToken: Boolean(token),
+    hasProjectId: Boolean(projectId),
+    hasTeamId: Boolean(teamId),
+    recent,
+    recentError,
+    lastDeploy: {
+      lastTriggeredAt: lastDeploy.lastTriggeredAt ?? null,
+      lastStatus: lastDeploy.lastStatus ?? null,
+      lastOk: lastDeploy.lastOk ?? null,
+      lastResponseText: lastDeploy.lastResponseText ?? null,
+    },
+  };
+}
+
+async function triggerVercelDeploy(slug) {
+  const hookUrl = getVercelDeployHookUrl(slug);
+  if (!hookUrl) {
+    throw new Error(
+      "Configure VERCEL_DEPLOY_HOOK_URL in project secrets first.",
+    );
+  }
+  const response = await fetch(hookUrl, { method: "POST" });
+  const text = await response.text();
+  const project = updateProjectMetadata(slug, (current) => ({
+    ...current,
+    deploy: {
+      ...(current.deploy ?? {}),
+      vercel: {
+        lastTriggeredAt: Date.now(),
+        lastStatus: response.status,
+        lastOk: response.ok,
+        lastResponseText: truncateOutput(text, 1500),
+      },
+    },
+  }));
+  return {
+    ok: response.ok,
+    status: response.status,
+    responseText: truncateOutput(text, 1500),
+    deploy: project.deploy?.vercel ?? null,
   };
 }
 
