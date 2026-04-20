@@ -2,10 +2,46 @@ import { $, state } from "./state.js";
 import { el, escapeHtml, renderMarkdownish } from "./utils.js";
 import { isSubagentThread } from "./subagent-meta.js";
 
+const PINNED_THREADS_KEY = "pinnedThreadIds";
+
 export function patchKind(kind) {
   if (!kind) return "update";
   if (typeof kind === "string") return kind;
   return kind.type ?? "update";
+}
+
+export function getPinnedThreadIds() {
+  try {
+    const raw = localStorage.getItem(PINNED_THREADS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((value) => typeof value === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+export function isThreadPinned(id) {
+  return getPinnedThreadIds().has(id);
+}
+
+export function togglePinnedThread(id) {
+  const pinned = getPinnedThreadIds();
+  if (pinned.has(id)) {
+    pinned.delete(id);
+  } else {
+    pinned.add(id);
+  }
+  try {
+    localStorage.setItem(
+      PINNED_THREADS_KEY,
+      JSON.stringify(Array.from(pinned)),
+    );
+  } catch {
+    // swallow — non-fatal if storage is full/unavailable
+  }
+  return pinned.has(id);
 }
 
 export function createRenderers({
@@ -112,15 +148,23 @@ export function createRenderers({
       state.filterArchived,
     );
     const query = (state.threadSearchQuery ?? "").trim().toLowerCase();
-    const threads = state.threads.filter((thread) => {
-      if (Boolean(thread.archived) !== state.filterArchived) return false;
-      if (!query) return true;
-      const haystack = [thread.name, thread.preview, thread.id]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
-    });
+    const pinned = getPinnedThreadIds();
+    const threads = state.threads
+      .filter((thread) => {
+        if (Boolean(thread.archived) !== state.filterArchived) return false;
+        if (!query) return true;
+        const haystack = [thread.name, thread.preview, thread.id]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      })
+      .sort((left, right) => {
+        const leftPinned = pinned.has(left.id) ? 1 : 0;
+        const rightPinned = pinned.has(right.id) ? 1 : 0;
+        if (leftPinned !== rightPinned) return rightPinned - leftPinned;
+        return (right.lastActive ?? 0) - (left.lastActive ?? 0);
+      });
     if (threads.length === 0) {
       const empty = query
         ? `No ${state.filterArchived ? "archived" : "saved"} threads match "${escapeHtml(query)}".`
@@ -129,12 +173,14 @@ export function createRenderers({
       return;
     }
     for (const thread of threads) {
+      const isPinned = pinned.has(thread.id);
       const row = el("div", {
-        class: `thread-item${thread.id === state.activeThreadId ? " active" : ""}`,
+        class: `thread-item${thread.id === state.activeThreadId ? " active" : ""}${isPinned ? " pinned" : ""}`,
       });
       const main = el("button", { class: "thread-main", type: "button" });
       main.innerHTML = `
         <div class="thread-name">
+          ${isPinned ? '<span class="thread-pin-glyph" aria-hidden="true" title="Pinned">📌</span>' : ""}
           <span>${escapeHtml(thread.name ?? thread.id)}</span>
           ${isSubagentThread(thread) ? '<span class="thread-badge">agent</span>' : ""}
         </div>
@@ -162,6 +208,10 @@ export function createRenderers({
       if (state.threadMenuOpenId === thread.id) {
         const menu = el("div", { class: "thread-menu" });
         const options = [
+          {
+            action: isPinned ? "unpin" : "pin",
+            label: isPinned ? "Unpin" : "Pin",
+          },
           { action: "fork", label: "Fork" },
           { action: "duplicate", label: "Duplicate" },
           { action: "share", label: "Share" },

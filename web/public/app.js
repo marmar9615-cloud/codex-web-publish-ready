@@ -9,7 +9,7 @@ import {
 import { escapeHtml } from "./utils.js";
 import { showToast } from "./toast.js";
 import { createUploads, hydrateWorkdirMedia } from "./uploads.js";
-import { createRenderers } from "./renderers.js";
+import { createRenderers, togglePinnedThread } from "./renderers.js";
 import { createModals } from "./modals.js";
 import { createFileTree } from "./filetree.js";
 import { createLivePreview } from "./preview.js";
@@ -910,6 +910,15 @@ async function handleThreadAction(action, thread) {
         renderers.appendSystem(`Thread id: ${threadId}`);
       }
       return;
+    case "pin":
+    case "unpin": {
+      const nowPinned = togglePinnedThread(threadId);
+      renderers.renderThreads();
+      renderers.appendSystem(
+        nowPinned ? "Pinned thread to top." : "Unpinned thread.",
+      );
+      return;
+    }
     default:
       return;
   }
