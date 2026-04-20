@@ -918,6 +918,7 @@ function bindUi() {
   $("#composer").addEventListener("submit", onSubmit);
   $("#cancel-btn").addEventListener("click", () => void interruptTurn());
   $("#new-thread").addEventListener("click", newThread);
+  $("#sidebar-toggle-btn")?.addEventListener("click", toggleSidebar);
   $("#account-btn").addEventListener("click", onAccountClick);
   $("#settings-btn").addEventListener("click", () => modals.openSettings());
   $("#workspace-github-btn")?.addEventListener("click", () => {
@@ -990,6 +991,46 @@ function bindUi() {
     event.preventDefault();
     modals.openShortcutsModal();
   });
+
+  document.addEventListener("keydown", (event) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+    const modalOpen = Boolean(document.querySelector("#modal-root .modal-backdrop"));
+    const key = event.key.toLowerCase();
+    if (key === "b" && !event.shiftKey && !modalOpen) {
+      event.preventDefault();
+      toggleSidebar();
+      return;
+    }
+    if (key === "n" && !event.shiftKey && !modalOpen) {
+      event.preventDefault();
+      newThread();
+      return;
+    }
+    if (key === "," && !event.shiftKey && !modalOpen) {
+      event.preventDefault();
+      modals.openSettings();
+      return;
+    }
+    if (key === "k" && !event.shiftKey && !modalOpen) {
+      event.preventDefault();
+      focusComposerAndOpenSlash();
+      return;
+    }
+  });
+}
+
+function toggleSidebar() {
+  document.body.classList.toggle("sidebar-collapsed");
+}
+
+function focusComposerAndOpenSlash() {
+  const input = $("#input");
+  if (!input) return;
+  input.focus();
+  if (input.value.trim().length === 0) {
+    input.value = "/";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
 }
 
 async function createProject() {

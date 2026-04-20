@@ -146,6 +146,7 @@ export function createModals({
   }
 
   function openShortcutsModal() {
+    const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
     const rows = [
       ["Enter", "Send the current message"],
       ["Shift + Enter", "Insert a newline in the composer"],
@@ -155,6 +156,10 @@ export function createModals({
       ["↑ / ↓", "Navigate autocomplete suggestions"],
       ["Tab", "Accept the highlighted autocomplete item"],
       ["?", "Show this shortcuts reference"],
+      [`${mod} + K`, "Focus the composer and open slash commands"],
+      [`${mod} + N`, "Start a new thread"],
+      [`${mod} + B`, "Toggle the sidebar"],
+      [`${mod} + ,`, "Open settings"],
     ];
     const body = rows
       .map(

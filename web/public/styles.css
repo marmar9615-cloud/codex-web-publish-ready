@@ -275,6 +275,16 @@ body.workspace-collapsed #app {
   grid-template-columns: 272px minmax(0, 1fr);
 }
 
+body.sidebar-collapsed #app {
+  grid-template-columns: 0 minmax(0, 1fr) 380px;
+}
+body.sidebar-collapsed.workspace-collapsed #app {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+body.sidebar-collapsed #sidebar {
+  display: none;
+}
+
 /* -----------------------------------------------
    Sidebar
    ----------------------------------------------- */
