@@ -51,6 +51,14 @@ export function createRpc({
         state.initialized = true;
       })
       .catch((error) => {
+        const message = String(error?.message ?? "");
+        // The backend replies "Already initialized" when a WS reconnects to
+        // a session whose app-server initialize() already succeeded. That's
+        // not a real failure — the session is ready to use.
+        if (/already initialized/i.test(message)) {
+          state.initialized = true;
+          return;
+        }
         console.error("initialize failed", error);
       });
   }
