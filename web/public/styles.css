@@ -2318,6 +2318,44 @@ button.diff-expand-all:hover {
   color: var(--text-soft);
   margin: 0 2px;
 }
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.shortcuts-table td {
+  padding: 8px 6px;
+  border-top: 1px solid var(--hairline);
+  color: var(--text-soft);
+  vertical-align: middle;
+}
+.shortcuts-table tr:first-child td {
+  border-top: none;
+}
+.shortcuts-table .kbd-cell {
+  white-space: nowrap;
+  width: 180px;
+}
+.shortcuts-table kbd {
+  display: inline-block;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-soft);
+  min-width: 22px;
+  text-align: center;
+}
+.shortcuts-table .kbd-plus {
+  display: inline-block;
+  margin: 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
 #composer-hint .sep {
   display: inline-block;
   margin: 0 6px;

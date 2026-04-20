@@ -907,6 +907,24 @@ function bindUi() {
   input.addEventListener("keydown", onKeyDown);
   input.addEventListener("paste", uploads.onComposerPaste);
   autoGrow(input);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "?" || event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+    const target = event.target;
+    if (
+      target &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable)
+    ) {
+      return;
+    }
+    if (document.querySelector("#modal-root .modal-backdrop")) return;
+    event.preventDefault();
+    modals.openShortcutsModal();
+  });
 }
 
 async function createProject() {

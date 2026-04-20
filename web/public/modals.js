@@ -83,6 +83,47 @@ export function createModals({
     );
   }
 
+  function openShortcutsModal() {
+    const rows = [
+      ["Enter", "Send the current message"],
+      ["Shift + Enter", "Insert a newline in the composer"],
+      ["/", "Open the slash-command palette"],
+      ["@", "Reference a file or path"],
+      ["Esc", "Cancel the in-flight turn or close the autocomplete"],
+      ["↑ / ↓", "Navigate autocomplete suggestions"],
+      ["Tab", "Accept the highlighted autocomplete item"],
+      ["?", "Show this shortcuts reference"],
+    ];
+    const body = rows
+      .map(
+        ([keys, desc]) => `
+          <tr>
+            <td class="kbd-cell">${keys
+              .split(" + ")
+              .map((k) => `<kbd>${escapeHtml(k)}</kbd>`)
+              .join(" <span class=\"kbd-plus\">+</span> ")}</td>
+            <td>${escapeHtml(desc)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+    modal(
+      `
+      <h2>Keyboard shortcuts</h2>
+      <p class="settings-copy">Quick reference for the composer and autocomplete. Press <kbd>?</kbd> anywhere outside an input to reopen this.</p>
+      <table class="shortcuts-table">
+        <tbody>${body}</tbody>
+      </table>
+      <div class="modal-actions">
+        <button id="close" class="primary">Close</button>
+      </div>
+    `,
+      (mount) => {
+        mount.querySelector("#close").addEventListener("click", closeModal);
+      },
+    );
+  }
+
   function getSessionCodexHome() {
     const workdir = state.whoami?.workdir ?? "";
     if (!workdir) return "";
@@ -2602,6 +2643,7 @@ export function createModals({
     openPluginsModal,
     openProjectToolsModal,
     openSettings,
+    openShortcutsModal,
     openSkillsModal,
     openUserInputModal,
   };
