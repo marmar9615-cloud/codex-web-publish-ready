@@ -811,6 +811,21 @@ export function createModals({
     `;
   }
 
+  function isDeployActive(deployData) {
+    if (!deployData?.available) return false;
+    const busyStates = new Set(["building", "queued"]);
+    const recent = [
+      ...(deployData.vercel?.recent ?? []).map((d) => (d.state ?? "").toLowerCase()),
+      ...(deployData.netlify?.recent ?? []).map((d) =>
+        mapNetlifyState((d.state ?? "").toLowerCase()),
+      ),
+      ...(deployData.cloudflare?.recent ?? []).map((d) =>
+        mapCloudflareState((d.state ?? "").toLowerCase()),
+      ),
+    ];
+    return recent.some((state) => busyStates.has(state));
+  }
+
   function renderProjectDeployPanel(deployData) {
     if (!deployData.available) {
       return '<div class="manager-empty">Activate a named project from the sidebar before configuring deploy hooks.</div>';
@@ -819,6 +834,9 @@ export function createModals({
     const vercel = deployData.vercel ?? {};
     const netlify = deployData.netlify ?? {};
     const cloudflare = deployData.cloudflare ?? {};
+    const deployActiveBanner = isDeployActive(deployData)
+      ? '<div class="manager-note deploy-active-note"><span class="deploy-pulse"></span>A deploy is in progress — refreshing every 10 seconds.</div>'
+      : "";
     const renderLast = render.lastDeploy ?? {};
     const renderLastTime = renderLast.lastTriggeredAt
       ? new Date(renderLast.lastTriggeredAt).toLocaleString()
@@ -848,6 +866,7 @@ export function createModals({
       ? `<div class="manager-note manager-note-error">Cloudflare panel: ${escapeHtml(cloudflare.error)}</div>`
       : "";
     return `
+      ${deployActiveBanner}
       ${renderError}
       ${vercelError}
       ${netlifyError}
@@ -1386,6 +1405,7 @@ export function createModals({
     let lastShipResult = null;
     let logsAutoRefresh = false;
     let logsTimer = null;
+    let deployTimer = null;
 
     const panel = (tab, body) => `
       <section class="settings-panel" data-project-panel="${tab}" ${currentTab === tab ? "" : "hidden"}>
@@ -1435,6 +1455,11 @@ export function createModals({
         const refreshDeploy = async () => {
           currentDeployData = await loadProjectDeployData();
           rerender();
+          if (currentTab === "deploy" && isDeployActive(currentDeployData)) {
+            startDeployTimer();
+          } else {
+            stopDeployTimer();
+          }
         };
 
         const refreshShip = async () => {
@@ -1469,6 +1494,30 @@ export function createModals({
           }, 8000);
         };
 
+        const stopDeployTimer = () => {
+          if (deployTimer) {
+            clearInterval(deployTimer);
+            deployTimer = null;
+          }
+        };
+
+        const startDeployTimer = () => {
+          stopDeployTimer();
+          deployTimer = setInterval(() => {
+            if (currentTab !== "deploy") {
+              stopDeployTimer();
+              return;
+            }
+            void loadProjectDeployData().then((data) => {
+              currentDeployData = data;
+              rerender();
+              if (!isDeployActive(currentDeployData)) {
+                stopDeployTimer();
+              }
+            });
+          }, 10000);
+        };
+
         const refreshAll = async () => {
           [currentGitData, currentDeployData, currentShipData] = await Promise.all([
             loadProjectGitData(),
@@ -1476,11 +1525,17 @@ export function createModals({
             loadProjectShipData(),
           ]);
           rerender();
+          if (currentTab === "deploy" && isDeployActive(currentDeployData)) {
+            startDeployTimer();
+          } else {
+            stopDeployTimer();
+          }
         };
 
         const bind = () => {
           mount.querySelector("#project-tools-close")?.addEventListener("click", () => {
             stopLogsTimer();
+            stopDeployTimer();
             closeModal();
           });
           mount.querySelectorAll("[data-project-tab]").forEach((button) => {
@@ -1489,10 +1544,16 @@ export function createModals({
               if (nextTab !== "logs") {
                 stopLogsTimer();
               }
+              if (nextTab !== "deploy") {
+                stopDeployTimer();
+              }
               currentTab = nextTab;
               rerender();
               if (currentTab === "logs" && !currentLogsData.available) {
                 void refreshLogs();
+              }
+              if (currentTab === "deploy" && isDeployActive(currentDeployData)) {
+                startDeployTimer();
               }
             });
           });
