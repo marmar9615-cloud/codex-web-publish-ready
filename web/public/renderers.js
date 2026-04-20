@@ -1,5 +1,6 @@
 import { $, state } from "./state.js";
 import { el, escapeHtml, renderMarkdownish } from "./utils.js";
+import { isSubagentThread } from "./subagent-meta.js";
 
 export function patchKind(kind) {
   if (!kind) return "update";
@@ -120,7 +121,10 @@ export function createRenderers({
       });
       const main = el("button", { class: "thread-main", type: "button" });
       main.innerHTML = `
-        <div class="thread-name">${escapeHtml(thread.name ?? thread.id)}</div>
+        <div class="thread-name">
+          <span>${escapeHtml(thread.name ?? thread.id)}</span>
+          ${isSubagentThread(thread) ? '<span class="thread-badge">agent</span>' : ""}
+        </div>
         <div class="thread-time">${escapeHtml(new Date(thread.lastActive).toLocaleString())}</div>
       `;
       main.addEventListener("click", () => {

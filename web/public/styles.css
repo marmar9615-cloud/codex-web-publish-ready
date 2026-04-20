@@ -495,6 +495,9 @@ body.workspace-collapsed #app {
   outline: none;
 }
 .thread-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
@@ -502,6 +505,20 @@ body.workspace-collapsed #app {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.4;
+}
+.thread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(125, 231, 209, 0.10);
+  border: 1px solid rgba(125, 231, 209, 0.22);
+  color: var(--accent-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex: 0 0 auto;
 }
 .thread-item .thread-time {
   color: var(--muted);
@@ -594,7 +611,7 @@ body.workspace-collapsed #app {
    ----------------------------------------------- */
 #chat {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
   min-width: 0;
   min-height: 0;
   background: var(--bg-base);
@@ -646,6 +663,137 @@ body.workspace-collapsed #app {
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
+}
+#subagent-pane {
+  border-bottom: 1px solid var(--hairline);
+  background:
+    linear-gradient(180deg, rgba(125, 231, 209, 0.04), transparent 80%),
+    rgba(255, 255, 255, 0.01);
+  padding: 14px 22px;
+}
+.subagent-pane-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.subagent-pane-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.subagent-task-strip {
+  display: flex;
+  gap: 10px;
+  overflow: auto;
+  padding: 12px 0;
+}
+.subagent-task-chip {
+  min-width: 180px;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+}
+.subagent-task-chip.active {
+  background: rgba(125, 231, 209, 0.10);
+  border-color: rgba(125, 231, 209, 0.24);
+}
+.subagent-task-label {
+  max-width: 100%;
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.subagent-task-status {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+.subagent-detail {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 12px;
+}
+.subagent-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.subagent-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+  margin-top: 4px;
+}
+.subagent-detail-state {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.03);
+  text-transform: lowercase;
+}
+.subagent-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 280px;
+  overflow: auto;
+}
+.subagent-turn {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 10px;
+}
+.subagent-turn-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.subagent-entry {
+  border-radius: var(--r-md);
+  padding: 9px 10px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.subagent-entry + .subagent-entry {
+  margin-top: 8px;
+}
+.subagent-entry.user {
+  background: rgba(127, 168, 255, 0.10);
+  border: 1px solid rgba(127, 168, 255, 0.20);
+}
+.subagent-entry.assistant {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--hairline);
+}
+.subagent-entry.tool,
+.subagent-entry.pending {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--border);
+  color: var(--text-soft);
 }
 .pill {
   font-size: 11px;
@@ -2512,6 +2660,8 @@ button.diff-expand-all:hover {
   #workspace-toggle-btn { display: none; }
   #todo-pane { display: none; }
   #todo-toggle-btn { display: none; }
+  #subagent-pane { display: none; }
+  #subagent-toggle-btn { display: none; }
   #transcript { padding: 22px 18px 28px; }
   #composer { padding: 12px 16px 14px; }
   #autocomplete { left: 16px; right: 16px; }
@@ -2524,6 +2674,7 @@ button.diff-expand-all:hover {
   #chat-header { padding: 10px 14px; }
   #workspace-root-chip { display: none; }
   #todo-pane { display: none; }
+  #subagent-pane { display: none; }
   #transcript { padding: 18px 14px 24px; }
   #composer { padding: 10px 12px 12px; }
   #autocomplete { left: 12px; right: 12px; }

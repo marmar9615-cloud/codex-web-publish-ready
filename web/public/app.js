@@ -13,9 +13,11 @@ import { createModals } from "./modals.js";
 import { createFileTree } from "./filetree.js";
 import { createLivePreview } from "./preview.js";
 import { createMobilePreview } from "./mobile.js";
+import { createSubagentPane } from "./subagents.js";
 import { createTerminal } from "./terminal.js";
 import { createTestRunner } from "./tests.js";
 import { createTodoPane } from "./todos.js";
+import { isSubagentThread } from "./subagent-meta.js";
 import {
   createNotificationHandlers,
   isAuthErrorMessage,
@@ -158,6 +160,11 @@ const terminal = createTerminal({
 });
 
 const todoPane = createTodoPane();
+const subagentPane = createSubagentPane({
+  rpcCall: rpc.rpcCall,
+  openThread,
+  appendSystem: renderers.appendSystem,
+});
 
 notificationHandlers = createNotificationHandlers({
   rpcReply: rpc.rpcReply,
@@ -224,8 +231,12 @@ async function bootstrap() {
   terminal.init();
   testRunner.init();
   todoPane.init();
+  subagentPane.init();
   window.addEventListener("codex:planUpdated", (event) => {
     todoPane.update(event.detail ?? {});
+  });
+  window.addEventListener("codex:refreshSubagents", () => {
+    void subagentPane.refresh();
   });
   rpc.connectWs();
   updateStatusBar();
@@ -280,6 +291,10 @@ async function refreshThreads() {
         id: thread.id,
         name: thread.name ?? thread.preview ?? thread.id,
         preview: thread.preview ?? "",
+        source: thread.source ?? null,
+        agentNickname: thread.agentNickname ?? null,
+        agentRole: thread.agentRole ?? null,
+        turns: thread.turns ?? [],
         lastActive:
           (thread.updatedAt ??
             thread.createdAt ??
@@ -296,6 +311,9 @@ async function refreshThreads() {
     console.warn("thread list failed", error.message);
   }
   renderers.renderThreads();
+  await subagentPane.refresh().catch((error) => {
+    console.warn("sub-agent pane refresh failed", error.message);
+  });
 }
 
 function modelSlug(model) {
@@ -467,6 +485,7 @@ async function openThread(threadId) {
   $("#thread-title").textContent = threadId;
   clearConversationState();
   renderers.renderThreads();
+  void subagentPane.refresh();
   try {
     try {
       const response = await rpc.rpcCall("thread/read", {
@@ -507,18 +526,20 @@ function newThread() {
   $("#thread-title").textContent = "New conversation";
   clearConversationState();
   renderers.renderThreads();
+  void subagentPane.refresh();
 }
 
 function onThreadStarted(thread) {
   if (!thread?.id) return;
-  state.activeThreadId = thread.id;
-  $("#thread-title").textContent =
-    thread.name ?? thread.preview ?? thread.id ?? "thread";
   const existing = state.threads.find((entry) => entry.id === thread.id);
   const snapshot = {
     id: thread.id,
     name: thread.name ?? thread.preview ?? thread.id,
     preview: thread.preview ?? "",
+    source: thread.source ?? null,
+    agentNickname: thread.agentNickname ?? null,
+    agentRole: thread.agentRole ?? null,
+    turns: thread.turns ?? [],
     lastActive:
       (thread.updatedAt ?? thread.createdAt ?? Math.floor(Date.now() / 1000)) *
       1000,
@@ -527,6 +548,12 @@ function onThreadStarted(thread) {
   };
   if (existing) Object.assign(existing, snapshot);
   else state.threads.unshift(snapshot);
+  if (!isSubagentThread(thread)) {
+    state.activeThreadId = thread.id;
+    $("#thread-title").textContent =
+      thread.name ?? thread.preview ?? thread.id ?? "thread";
+  }
+  void subagentPane.refresh();
 }
 
 function onTurnStarted(turn) {

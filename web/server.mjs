@@ -3140,15 +3140,28 @@ function upsertThreadSnapshot(session, thread) {
   existing.preview = thread.preview ?? existing.preview ?? "";
   existing.status = thread.status ?? existing.status ?? "active";
   existing.archived = Boolean(thread.status === "archived");
+  existing.source = thread.source ?? existing.source ?? null;
+  existing.agentNickname = thread.agentNickname ?? existing.agentNickname ?? null;
+  existing.agentRole = thread.agentRole ?? existing.agentRole ?? null;
   existing.lastActive = thread.updatedAt ? thread.updatedAt * 1000 : Date.now();
   session.threads.set(thread.id, existing);
+}
+
+function isSubagentThreadSnapshot(thread) {
+  const source = thread?.source;
+  if (!source || typeof source !== "object") return false;
+  const subagent = source.subagent;
+  if (!subagent || typeof subagent !== "object") return false;
+  return Boolean(subagent.thread_spawn);
 }
 
 function observeForSession(session, msg) {
   if (msg.method === "thread/started" && msg.params?.thread) {
     upsertThreadSnapshot(session, msg.params.thread);
-    session.activeThreadId = msg.params.thread.id;
-    if (session.backend) session.backend.outFrames = [];
+    if (!isSubagentThreadSnapshot(msg.params.thread)) {
+      session.activeThreadId = msg.params.thread.id;
+      if (session.backend) session.backend.outFrames = [];
+    }
     return;
   }
   if (

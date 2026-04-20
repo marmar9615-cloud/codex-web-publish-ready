@@ -59,6 +59,7 @@
             <div id="workspace-root-chip" class="header-subtitle" hidden></div>
           </div>
           <div id="status-bar" aria-label="Session status">
+            <button id="subagent-toggle-btn" type="button" class="pill ghost-pill" hidden>Tasks</button>
             <button id="todo-toggle-btn" type="button" class="pill ghost-pill">Todos</button>
             <button id="workspace-toggle-btn" type="button" class="pill ghost-pill">Files</button>
             <span id="backend-pill" class="pill">backend: …</span>
@@ -71,6 +72,7 @@
           </div>
         </div>
 
+        <aside id="subagent-pane" aria-label="Running sub-agent tasks" hidden></aside>
         <div id="transcript" tabindex="0" aria-label="Conversation"></div>
         <template id="empty-hero-tpl">
           <div class="empty-hero" aria-hidden="false">
