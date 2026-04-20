@@ -299,38 +299,82 @@ export function createRenderers({
         acc[kind] = (acc[kind] ?? 0) + 1;
         return acc;
       }, {}) ?? {};
+    const fileCount = item.changes?.length ?? 0;
     const summary = Object.entries(counts)
       .map(([kind, count]) => `${count} ${kind}`)
       .join(", ");
+    // Total +/- across all files, for the card header.
+    const totals = (item.changes ?? []).reduce(
+      (acc, change) => {
+        if (!change.diff) return acc;
+        const lc = countDiffLines(change.diff);
+        acc.add += lc.add;
+        acc.del += lc.del;
+        return acc;
+      },
+      { add: 0, del: 0 },
+    );
+    const totalBadge =
+      totals.add > 0 || totals.del > 0
+        ? ` · <span class="diff-add-count">+${totals.add}</span> <span class="diff-del-count">\u2212${totals.del}</span>`
+        : "";
     card.innerHTML = `
       <div class="tc-head">
         <span class="status-dot ${escapeHtml(item.status)}"></span>
         <span class="badge">apply_patch</span>
-        <span>${escapeHtml(item.status)}${summary ? ` · ${summary}` : ""}</span>
+        <span>${escapeHtml(item.status)}${summary ? ` \u00b7 ${summary}` : ""}${totalBadge}</span>
+        ${fileCount > 1 ? `<button type="button" class="diff-expand-all" data-expand="1">Expand all</button>` : ""}
       </div>
     `;
-    if (item.changes?.some((change) => change.diff)) {
-      const pre = el("pre", { "data-stream": "file" });
-      pre.textContent = item.changes
-        .map((change) => change.diff ?? "")
-        .filter(Boolean)
-        .join("\n");
-      card.appendChild(pre);
-    }
+    const expandAllBtn = card.querySelector(".diff-expand-all");
     for (const change of item.changes ?? []) {
       const kind = patchKind(change.kind);
-      const file = el("div", { class: "diff-file" });
+      const lineCounts = change.diff
+        ? countDiffLines(change.diff)
+        : { add: 0, del: 0 };
+      const shouldCollapse = lineCounts.add + lineCounts.del > 50;
+      const file = el("details", {
+        class: "diff-file",
+        ...(shouldCollapse ? {} : { open: "" }),
+      });
       file.innerHTML = `
-        <header>
+        <summary>
           <span class="kind ${escapeHtml(kind)}">${escapeHtml(kind)}</span>
-          <span>${escapeHtml(change.path)}</span>
-        </header>
+          <span class="diff-path">${escapeHtml(change.path)}</span>
+          <span class="diff-counts">
+            <span class="diff-add-count">+${lineCounts.add}</span>
+            <span class="diff-del-count">\u2212${lineCounts.del}</span>
+          </span>
+        </summary>
         ${change.diff ? `<div class="diff-body">${renderDiff(change.diff)}</div>` : ""}
       `;
       card.appendChild(file);
     }
+    if (expandAllBtn) {
+      expandAllBtn.addEventListener("click", () => {
+        const files = card.querySelectorAll(".diff-file");
+        const shouldOpen = expandAllBtn.dataset.expand === "1";
+        files.forEach((f) => {
+          if (shouldOpen) f.setAttribute("open", "");
+          else f.removeAttribute("open");
+        });
+        expandAllBtn.textContent = shouldOpen ? "Collapse all" : "Expand all";
+        expandAllBtn.dataset.expand = shouldOpen ? "0" : "1";
+      });
+    }
     cell.appendChild(card);
     return cell;
+  }
+
+  function countDiffLines(diff) {
+    let add = 0;
+    let del = 0;
+    const lines = diff.split("\n");
+    for (const line of lines) {
+      if (line.startsWith("+") && !line.startsWith("+++")) add++;
+      else if (line.startsWith("-") && !line.startsWith("---")) del++;
+    }
+    return { add, del };
   }
 
   function renderDiff(diff) {

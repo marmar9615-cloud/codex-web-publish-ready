@@ -941,7 +941,7 @@ hr {
   overflow: hidden;
   background: var(--code-bg);
 }
-.diff-file header {
+.diff-file > summary {
   background: var(--bg-elevated);
   padding: 6px 10px;
   font-family: var(--mono);
@@ -951,6 +951,58 @@ hr {
   gap: 9px;
   align-items: center;
   color: var(--text-soft);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.diff-file > summary::-webkit-details-marker {
+  display: none;
+}
+.diff-file > summary::before {
+  content: "\25b6";
+  display: inline-block;
+  font-size: 9px;
+  color: var(--muted);
+  transition: transform var(--dur-1) var(--ease-out);
+  transform: rotate(0deg);
+  margin-right: 2px;
+}
+.diff-file[open] > summary::before {
+  transform: rotate(90deg);
+}
+.diff-file:not([open]) > summary {
+  border-bottom-color: transparent;
+}
+.diff-file > summary .diff-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.diff-file > summary .diff-counts {
+  font-size: 11px;
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.diff-add-count { color: var(--green); font-variant-numeric: tabular-nums; }
+.diff-del-count { color: var(--red); font-variant-numeric: tabular-nums; }
+button.diff-expand-all {
+  margin-left: auto;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--font-display);
+}
+button.diff-expand-all:hover {
+  color: var(--text);
+  border-color: var(--border);
 }
 .diff-file header .kind {
   padding: 1px 6px;
