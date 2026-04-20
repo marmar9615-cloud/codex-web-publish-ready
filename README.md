@@ -223,11 +223,11 @@ docker run --rm -p 5000:5000 -v codex-web-data:/var/data codex-web
 
 Three sign-in paths, picked automatically by origin:
 
-| Origin | Flow |
-|---|---|
+| Origin                    | Flow                                                               |
+| ------------------------- | ------------------------------------------------------------------ |
 | `localhost` / `127.0.0.1` | Browser-callback OAuth (`account/login/start { type: "chatgpt" }`) |
-| Any public origin | Gateway-managed device-code OAuth |
-| Automation | `POST /api/login` with an `OPENAI_API_KEY` |
+| Any public origin         | Gateway-managed device-code OAuth                                  |
+| Automation                | `POST /api/login` with an `OPENAI_API_KEY`                         |
 
 The gateway owns refresh-token handling for device-code sessions, so
 long-running browser sessions stay signed in without re-auth.
@@ -289,17 +289,17 @@ auth, uploads, and signed workdir file serving.
 
 ## Repository layout
 
-| Path | Purpose |
-|---|---|
-| [`web/`](./web/) | Browser client, Node gateway, Playwright suites, Replit helpers |
-| [`web/public/`](./web/public/) | Vanilla-JS frontend (no build step) |
-| [`web/server.mjs`](./web/server.mjs) | JSON-RPC gateway, session manager, OAuth |
-| [`codex-rs/`](./codex-rs/) | Rust `app-server`, protocol, hooks, skills, MCP |
-| [`codex-rs/app-server/`](./codex-rs/app-server/) | The backend binary |
-| [`codex-rs/protocol/`](./codex-rs/protocol/) | v2 protocol types |
-| [`docs/`](./docs/) | Broader repository and contributor docs |
-| [`render.yaml`](./render.yaml) | Render Blueprint |
-| [`.replit`](./.replit) | Replit workspace + Deployments config |
+| Path                                             | Purpose                                                         |
+| ------------------------------------------------ | --------------------------------------------------------------- |
+| [`web/`](./web/)                                 | Browser client, Node gateway, Playwright suites, Replit helpers |
+| [`web/public/`](./web/public/)                   | Vanilla-JS frontend (no build step)                             |
+| [`web/server.mjs`](./web/server.mjs)             | JSON-RPC gateway, session manager, OAuth                        |
+| [`codex-rs/`](./codex-rs/)                       | Rust `app-server`, protocol, hooks, skills, MCP                 |
+| [`codex-rs/app-server/`](./codex-rs/app-server/) | The backend binary                                              |
+| [`codex-rs/protocol/`](./codex-rs/protocol/)     | v2 protocol types                                               |
+| [`docs/`](./docs/)                               | Broader repository and contributor docs                         |
+| [`render.yaml`](./render.yaml)                   | Render Blueprint                                                |
+| [`.replit`](./.replit)                           | Replit workspace + Deployments config                           |
 
 ---
 
