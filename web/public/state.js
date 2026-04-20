@@ -18,6 +18,7 @@ export const state = {
   reconnectAttempts: 0,
   whoami: null,
   projects: [],
+  plan: null,
   threads: [],
   filterArchived: false,
   activeThreadId: null,

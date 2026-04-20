@@ -59,6 +59,7 @@
             <div id="workspace-root-chip" class="header-subtitle" hidden></div>
           </div>
           <div id="status-bar" aria-label="Session status">
+            <button id="todo-toggle-btn" type="button" class="pill ghost-pill">Todos</button>
             <button id="workspace-toggle-btn" type="button" class="pill ghost-pill">Files</button>
             <span id="backend-pill" class="pill">backend: …</span>
             <span id="account-pill" class="pill" hidden>account: …</span>
@@ -144,6 +145,7 @@
             </div>
           </div>
         </form>
+        <aside id="todo-pane" aria-label="Latest plan" hidden></aside>
       </main>
 
       <aside id="workspace-panel" aria-label="Workspace files">

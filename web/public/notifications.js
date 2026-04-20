@@ -42,6 +42,7 @@ export function createNotificationHandlers({
   onThreadStarted,
   onTurnStarted,
   onTurnFinished,
+  onPlanUpdated,
   onFsChanged,
   onStandaloneCommandDelta,
 }) {
@@ -258,7 +259,9 @@ export function createNotificationHandlers({
       case "item/commandExecution/terminalInteraction":
         return;
       case "turn/diff/updated":
+        return;
       case "turn/plan/updated":
+        if (onPlanUpdated) onPlanUpdated(params);
         return;
       case "thread/compacted":
         appendSystem("History compacted.");

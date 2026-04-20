@@ -12,6 +12,7 @@ import { createRenderers } from "./renderers.js";
 import { createModals } from "./modals.js";
 import { createFileTree } from "./filetree.js";
 import { createTestRunner } from "./tests.js";
+import { createTodoPane } from "./todos.js";
 import {
   createNotificationHandlers,
   isAuthErrorMessage,
@@ -117,6 +118,8 @@ const testRunner = createTestRunner({
   appendSystem: renderers.appendSystem,
 });
 
+const todoPane = createTodoPane();
+
 notificationHandlers = createNotificationHandlers({
   rpcReply: rpc.rpcReply,
   rpcRaw: rpc.rpcRaw,
@@ -143,6 +146,7 @@ notificationHandlers = createNotificationHandlers({
   onThreadStarted,
   onTurnStarted,
   onTurnFinished,
+  onPlanUpdated: (params) => todoPane.update(params),
   onFsChanged: (params) => void fileTree.handleFsChanged(params),
   onStandaloneCommandDelta,
 });
@@ -176,6 +180,10 @@ async function bootstrap() {
   bindUi();
   fileTree.init();
   testRunner.init();
+  todoPane.init();
+  window.addEventListener("codex:planUpdated", (event) => {
+    todoPane.update(event.detail ?? {});
+  });
   rpc.connectWs();
   updateStatusBar();
   uploads.renderPendingUploads();
@@ -376,6 +384,7 @@ async function pushSettingsToBackend() {
 function clearConversationState() {
   state.activeTurnId = null;
   state.currentTurnRecordId = null;
+  todoPane.clear();
   renderers.clearTranscript();
 }
 
