@@ -410,6 +410,12 @@ export function createModals({
 
   async function loadProjectGitData() {
     const slug = state.whoami?.activeProjectSlug;
+    const emptyOauth = {
+      configured: false,
+      connected: false,
+      user: null,
+      scopes: [],
+    };
     if (!slug) {
       return {
         available: false,
@@ -417,11 +423,12 @@ export function createModals({
         status: null,
         githubConfigured: false,
         repos: [],
+        oauth: emptyOauth,
         error: null,
       };
     }
     try {
-      const [statusData, reposData] = await Promise.all([
+      const [statusData, reposData, oauthData] = await Promise.all([
         fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/git/status`),
         fetchProjectJson(`/api/github/repos?slug=${encodeURIComponent(slug)}`).catch(
           () => ({
@@ -429,6 +436,7 @@ export function createModals({
             repos: [],
           }),
         ),
+        fetchProjectJson("/api/oauth/github/status").catch(() => emptyOauth),
       ]);
       return {
         available: true,
@@ -436,6 +444,12 @@ export function createModals({
         status: statusData.status ?? null,
         githubConfigured: Boolean(reposData.configured),
         repos: reposData.repos ?? [],
+        oauth: {
+          configured: Boolean(oauthData.configured),
+          connected: Boolean(oauthData.connected),
+          user: oauthData.user ?? null,
+          scopes: Array.isArray(oauthData.scopes) ? oauthData.scopes : [],
+        },
         error: null,
       };
     } catch (error) {
@@ -445,6 +459,7 @@ export function createModals({
         status: null,
         githubConfigured: false,
         repos: [],
+        oauth: emptyOauth,
         error: error.message,
       };
     }
@@ -692,12 +707,45 @@ export function createModals({
       return `<div class="manager-empty">GitHub panel failed to load: ${escapeHtml(gitData.error)}</div>`;
     }
     const status = gitData.status;
+    const oauth = gitData.oauth ?? {};
+    let oauthBanner = "";
+    if (oauth.connected && oauth.user) {
+      oauthBanner = `
+        <div class="manager-note github-oauth-banner github-oauth-connected">
+          <div class="github-oauth-user">
+            ${
+              oauth.user.avatarUrl
+                ? `<img src="${escapeHtml(oauth.user.avatarUrl)}" alt="" width="24" height="24" />`
+                : ""
+            }
+            <div>
+              <strong>${escapeHtml(oauth.user.name ?? oauth.user.login ?? "GitHub user")}</strong>
+              <span class="manager-meta">@${escapeHtml(oauth.user.login ?? "?")}${oauth.scopes?.length ? ` · ${escapeHtml(oauth.scopes.join(", "))}` : ""}</span>
+            </div>
+          </div>
+          <button id="github-oauth-logout" type="button" class="ghost">Disconnect</button>
+        </div>
+      `;
+    } else if (oauth.configured) {
+      oauthBanner = `
+        <div class="manager-note github-oauth-banner">
+          <div>
+            <strong>Sign in with GitHub</strong>
+            <span class="manager-meta">Skip the token — authorize once and every project gets repo access, PR creation, and clone for your account.</span>
+          </div>
+          <button id="github-oauth-signin" type="button" class="primary">Sign in with GitHub</button>
+        </div>
+      `;
+    }
     return `
-      <p class="settings-copy">Clone a repo into this project, inspect the working tree, commit, push, and open a pull request. Private GitHub actions use a <code>GITHUB_TOKEN</code> from the project Secrets tab.</p>
+      ${oauthBanner}
+      <p class="settings-copy">Clone a repo into this project, inspect the working tree, commit, push, and open a pull request. Private GitHub actions use your signed-in GitHub account, or a <code>GITHUB_TOKEN</code> from the project Secrets tab.</p>
       ${
         gitData.githubConfigured
-          ? '<div class="manager-note">GitHub repo suggestions are live because a token is configured for this project.</div>'
-          : '<div class="manager-note">Add <code>GITHUB_TOKEN</code> in Secrets if you want private repo access and pull request creation.</div>'
+          ? '<div class="manager-note">GitHub repo suggestions are live.</div>'
+          : oauth.connected
+            ? ""
+            : '<div class="manager-note">Sign in with GitHub above, or add <code>GITHUB_TOKEN</code> in Secrets, to unlock private repo access and PR creation.</div>'
       }
       <div class="modal-row">
         <label>Clone from GitHub</label>
@@ -1562,6 +1610,83 @@ export function createModals({
               appendSystem(`pull request failed: ${error.message}`, "error");
             } finally {
               button.disabled = false;
+            }
+          });
+
+          mount.querySelector("#github-oauth-signin")?.addEventListener("click", async () => {
+            const button = mount.querySelector("#github-oauth-signin");
+            button.disabled = true;
+            try {
+              const data = await fetchProjectJson("/api/oauth/github/start");
+              if (!data.authorizeUrl) {
+                throw new Error("GitHub OAuth is not configured on this server.");
+              }
+              const popup = window.open(
+                data.authorizeUrl,
+                "codex-github-oauth",
+                "width=640,height=760,noopener=no,noreferrer=no",
+              );
+              if (!popup) {
+                throw new Error("Popup blocked — allow popups for this site and retry.");
+              }
+              setFeedback(
+                "#project-git-feedback",
+                "Complete the GitHub authorization in the popup…",
+              );
+              await new Promise((resolve, reject) => {
+                let settled = false;
+                const onMessage = (event) => {
+                  if (event.origin !== window.location.origin) return;
+                  const payload = event?.data;
+                  if (!payload || typeof payload !== "object") return;
+                  if (payload.type === "codex:github-connected") {
+                    settled = true;
+                    window.removeEventListener("message", onMessage);
+                    clearInterval(watcher);
+                    resolve();
+                  } else if (payload.type === "codex:github-oauth-error") {
+                    settled = true;
+                    window.removeEventListener("message", onMessage);
+                    clearInterval(watcher);
+                    reject(new Error(payload.message ?? "GitHub sign-in failed."));
+                  }
+                };
+                window.addEventListener("message", onMessage);
+                const watcher = setInterval(() => {
+                  if (settled) return;
+                  if (popup.closed) {
+                    settled = true;
+                    window.removeEventListener("message", onMessage);
+                    clearInterval(watcher);
+                    reject(new Error("GitHub sign-in window was closed."));
+                  }
+                }, 800);
+              });
+              setFeedback("#project-git-feedback", "GitHub account connected.");
+              showToast("Signed in with GitHub.", "success");
+              await refreshAll();
+            } catch (error) {
+              setFeedback("#project-git-feedback", error.message, "error");
+              appendSystem(`github sign-in failed: ${error.message}`, "error");
+            } finally {
+              if (button && !button.isConnected) return;
+              if (button) button.disabled = false;
+            }
+          });
+          mount.querySelector("#github-oauth-logout")?.addEventListener("click", async () => {
+            const button = mount.querySelector("#github-oauth-logout");
+            button.disabled = true;
+            try {
+              await fetchProjectJson("/api/oauth/github/logout", { method: "POST" });
+              setFeedback("#project-git-feedback", "GitHub account disconnected.");
+              showToast("GitHub account disconnected.", "success");
+              await refreshAll();
+            } catch (error) {
+              setFeedback("#project-git-feedback", error.message, "error");
+              appendSystem(`github disconnect failed: ${error.message}`, "error");
+            } finally {
+              if (button && !button.isConnected) return;
+              if (button) button.disabled = false;
             }
           });
 

@@ -958,7 +958,7 @@ app.get("/api/github/repos", sameOriginOnly, async (req, res) => {
   const session = getOrCreateSession(req, res);
   const slug = String(req.query.slug ?? session.activeProjectSlug ?? "");
   try {
-    res.json(await listGitHubRepos(slug));
+    res.json(await listGitHubRepos(slug, session));
   } catch (error) {
     res.status(502).json({ error: error.message });
   }
@@ -974,7 +974,7 @@ app.get("/api/projects/:slug/git/status", sameOriginOnly, async (req, res) => {
   }
   try {
     res.json({
-      status: await getProjectGitStatus(context.dir, slug),
+      status: await getProjectGitStatus(context.dir, slug, session),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1010,6 +1010,7 @@ app.post("/api/projects/:slug/git/clone", sameOriginOnly, async (req, res) => {
   const result = await runGit(cloneArgs, {
     cwd: PROJECTS_ROOT,
     slug,
+    session,
     repoHint: cloneUrl,
     timeoutMs: 20 * 60 * 1000,
   });
@@ -1042,7 +1043,7 @@ app.post("/api/projects/:slug/git/clone", sameOriginOnly, async (req, res) => {
   }
   res.json({
     ok: true,
-    status: await getProjectGitStatus(context.dir, slug),
+    status: await getProjectGitStatus(context.dir, slug, session),
   });
 });
 
@@ -1059,7 +1060,7 @@ app.post("/api/projects/:slug/git/commit", sameOriginOnly, async (req, res) => {
     res.status(400).json({ error: "message is required" });
     return;
   }
-  const status = await getProjectGitStatus(context.dir, slug);
+  const status = await getProjectGitStatus(context.dir, slug, session);
   if (!status.connected) {
     res.status(409).json({ error: "clone a git repo into this project first" });
     return;
@@ -1096,7 +1097,7 @@ app.post("/api/projects/:slug/git/commit", sameOriginOnly, async (req, res) => {
     res.json({
       ok: true,
       noChanges: true,
-      status: await getProjectGitStatus(context.dir, slug),
+      status: await getProjectGitStatus(context.dir, slug, session),
     });
     return;
   }
@@ -1117,7 +1118,7 @@ app.post("/api/projects/:slug/git/commit", sameOriginOnly, async (req, res) => {
     output: truncateOutput(
       [commitResult.stdout, commitResult.stderr].filter(Boolean).join("\n"),
     ),
-    status: await getProjectGitStatus(context.dir, slug),
+    status: await getProjectGitStatus(context.dir, slug, session),
   });
 });
 
@@ -1130,7 +1131,7 @@ app.post("/api/projects/:slug/git/push", sameOriginOnly, async (req, res) => {
     res.status(404).json({ error: "project not found" });
     return;
   }
-  const status = await getProjectGitStatus(context.dir, slug);
+  const status = await getProjectGitStatus(context.dir, slug, session);
   if (!status.connected) {
     res.status(409).json({ error: "clone a git repo into this project first" });
     return;
@@ -1150,6 +1151,7 @@ app.post("/api/projects/:slug/git/push", sameOriginOnly, async (req, res) => {
     {
       cwd: context.dir,
       slug,
+      session,
       repoHint,
       timeoutMs: 20 * 60 * 1000,
     },
@@ -1167,7 +1169,7 @@ app.post("/api/projects/:slug/git/push", sameOriginOnly, async (req, res) => {
     output: truncateOutput(
       [pushResult.stdout, pushResult.stderr].filter(Boolean).join("\n"),
     ),
-    status: await getProjectGitStatus(context.dir, slug),
+    status: await getProjectGitStatus(context.dir, slug, session),
   });
 });
 
@@ -1185,7 +1187,7 @@ app.post("/api/projects/:slug/git/pr", sameOriginOnly, async (req, res) => {
     res.status(400).json({ error: "title is required" });
     return;
   }
-  const status = await getProjectGitStatus(context.dir, slug);
+  const status = await getProjectGitStatus(context.dir, slug, session);
   const repoRef = parseGitHubRepoReference(status.remoteUrl ?? "");
   if (!repoRef?.fullName) {
     res.status(409).json({ error: "origin remote is not a GitHub repository" });
@@ -1196,8 +1198,9 @@ app.post("/api/projects/:slug/git/pr", sameOriginOnly, async (req, res) => {
     return;
   }
   try {
-    const repo = await requestGitHub(slug, `/repos/${repoRef.fullName}`);
+    const repo = await requestGitHub(slug, `/repos/${repoRef.fullName}`, { session });
     const pull = await requestGitHub(slug, `/repos/${repoRef.fullName}/pulls`, {
+      session,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1602,7 +1605,7 @@ app.get("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
   }
   res.json({
     commands: detectProjectShipCommands(context.dir, slug),
-    git: await getProjectGitStatus(context.dir, slug),
+    git: await getProjectGitStatus(context.dir, slug, session),
     deploy: loadRenderDeployState(slug),
   });
 });
@@ -1644,7 +1647,7 @@ app.post("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
     }
   }
 
-  const gitStatus = await getProjectGitStatus(context.dir, slug);
+  const gitStatus = await getProjectGitStatus(context.dir, slug, session);
   if (gitStatus.connected) {
     ensureProjectGitExclude(context.dir);
     if (commitMessage) {
@@ -1706,6 +1709,7 @@ app.post("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
         {
           cwd: context.dir,
           slug,
+          session,
           repoHint: remoteUrlResult.ok ? remoteUrlResult.stdout.trim() : "",
           timeoutMs: 20 * 60 * 1000,
         },
@@ -1831,6 +1835,7 @@ app.post("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
           {
             cwd: context.dir,
             slug,
+            session,
             repoHint: remoteUrlResult.ok ? remoteUrlResult.stdout.trim() : "",
             timeoutMs: 10 * 60 * 1000,
           },
@@ -1884,7 +1889,7 @@ app.post("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
     steps,
     tagCreated,
     changelog,
-    git: await getProjectGitStatus(context.dir, slug),
+    git: await getProjectGitStatus(context.dir, slug, session),
     deploy: loadRenderDeployState(slug),
   });
 });
@@ -1946,6 +1951,153 @@ app.post("/api/oauth/chatgpt/refresh", sameOriginOnly, async (req, res) => {
     if (err.status === 401) killBackend(session, "oauth refresh failed");
     res.status(err.status ?? 502).json({ error: err.message });
   }
+});
+
+// GitHub OAuth (standard authorization code grant).
+// Set CODEX_WEB_GITHUB_OAUTH_CLIENT_ID and CODEX_WEB_GITHUB_OAUTH_CLIENT_SECRET
+// in Render env vars. Callback URL registered on the GitHub OAuth App must be
+// <origin>/api/oauth/github/callback.
+const GITHUB_OAUTH_SCOPES = ["repo", "read:user", "user:email", "workflow"];
+
+function getGitHubOauthClientId() {
+  return process.env.CODEX_WEB_GITHUB_OAUTH_CLIENT_ID ?? null;
+}
+
+function getGitHubOauthClientSecret() {
+  return process.env.CODEX_WEB_GITHUB_OAUTH_CLIENT_SECRET ?? null;
+}
+
+function requestOrigin(req) {
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  const proto =
+    (typeof forwardedProto === "string" && forwardedProto.split(",")[0].trim()) ||
+    (isSecureRequest(req) ? "https" : "http");
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  return `${proto}://${host}`;
+}
+
+app.get("/api/oauth/github/status", sameOriginOnly, (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const connected = Boolean(session.githubOauth?.accessToken);
+  res.json({
+    configured: Boolean(getGitHubOauthClientId() && getGitHubOauthClientSecret()),
+    connected,
+    user: connected ? session.githubOauth.user ?? null : null,
+    scopes: connected ? session.githubOauth.scopes ?? [] : [],
+    connectedAt: connected ? session.githubOauth.connectedAt ?? null : null,
+  });
+});
+
+app.get("/api/oauth/github/start", sameOriginOnly, (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const clientId = getGitHubOauthClientId();
+  if (!clientId || !getGitHubOauthClientSecret()) {
+    res.status(503).json({
+      error:
+        "GitHub OAuth is not configured. Set CODEX_WEB_GITHUB_OAUTH_CLIENT_ID and CODEX_WEB_GITHUB_OAUTH_CLIENT_SECRET.",
+    });
+    return;
+  }
+  const state = randomBytes(16).toString("hex");
+  session.githubOauthPending = {
+    state,
+    createdAt: Date.now(),
+  };
+  const redirectUri = `${requestOrigin(req)}/api/oauth/github/callback`;
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: GITHUB_OAUTH_SCOPES.join(" "),
+    state,
+    allow_signup: "true",
+  });
+  res.json({
+    ok: true,
+    authorizeUrl: `https://github.com/login/oauth/authorize?${params.toString()}`,
+    state,
+  });
+});
+
+app.get("/api/oauth/github/callback", async (req, res) => {
+  const session = getSessionFromCookie(req.headers.cookie ?? "");
+  if (!session) {
+    res.status(400).send("Session missing or expired. Start the login again.");
+    return;
+  }
+  const code = String(req.query.code ?? "");
+  const state = String(req.query.state ?? "");
+  const pending = session.githubOauthPending;
+  if (!code || !state || !pending || pending.state !== state) {
+    res.status(400).send("Invalid OAuth state. Start the login again.");
+    return;
+  }
+  session.githubOauthPending = undefined;
+  const clientId = getGitHubOauthClientId();
+  const clientSecret = getGitHubOauthClientSecret();
+  const redirectUri = `${requestOrigin(req)}/api/oauth/github/callback`;
+  try {
+    const response = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "codex-web",
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        redirect_uri: redirectUri,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data?.access_token) {
+      throw new Error(
+        data?.error_description ?? `token exchange failed (${response.status})`,
+      );
+    }
+    const accessToken = String(data.access_token);
+    const scopes = String(data.scope ?? "")
+      .split(/[\s,]+/)
+      .filter(Boolean);
+    const userResponse = await fetch(`${GITHUB_API_ROOT}/user`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${accessToken}`,
+        "User-Agent": "codex-web",
+      },
+    });
+    const user = userResponse.ok ? await userResponse.json() : null;
+    session.githubOauth = {
+      accessToken,
+      scopes,
+      connectedAt: Date.now(),
+      user: user
+        ? {
+            login: user.login,
+            id: user.id,
+            name: user.name ?? null,
+            avatarUrl: user.avatar_url ?? null,
+            htmlUrl: user.html_url ?? null,
+          }
+        : null,
+    };
+    res
+      .status(200)
+      .set("Content-Type", "text/html")
+      .send(
+        `<!doctype html><html><head><meta charset="utf-8"><title>GitHub connected</title><style>body{font-family:system-ui;background:#0b0b0c;color:#e6e6e6;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}main{text-align:center;padding:24px}h1{font-size:18px;margin:0 0 10px}p{margin:0 0 16px;color:#888}button{background:#2e6efb;color:#fff;border:0;padding:8px 16px;border-radius:6px;cursor:pointer}</style></head><body><main><h1>GitHub account connected</h1><p>You can close this tab and return to Codex Web.</p><button onclick="window.close()">Close tab</button></main><script>try{window.opener&&window.opener.postMessage({type:'codex:github-connected'},'*');}catch(e){}</script></body></html>`,
+      );
+  } catch (error) {
+    res.status(502).send(`GitHub OAuth failed: ${error.message}`);
+  }
+});
+
+app.post("/api/oauth/github/logout", sameOriginOnly, (req, res) => {
+  const session = getOrCreateSession(req, res);
+  session.githubOauth = undefined;
+  session.githubOauthPending = undefined;
+  res.json({ ok: true });
 });
 
 app.get("/api/threads", (req, res) => {
@@ -2612,13 +2764,14 @@ function getProjectSecretValue(slug, key) {
   return secrets[key] ?? process.env[key] ?? null;
 }
 
-function getGitHubToken(slug) {
-  return (
+function getGitHubToken(slug, session) {
+  const projectToken =
     getProjectSecretValue(slug, "GITHUB_TOKEN") ??
-    getProjectSecretValue(slug, "GH_TOKEN") ??
-    process.env.CODEX_WEB_GITHUB_TOKEN ??
-    null
-  );
+    getProjectSecretValue(slug, "GH_TOKEN");
+  if (projectToken) return projectToken;
+  const sessionToken = session?.githubOauth?.accessToken;
+  if (sessionToken) return sessionToken;
+  return process.env.CODEX_WEB_GITHUB_TOKEN ?? null;
 }
 
 function getRenderSyncHookUrl(slug) {
@@ -2866,7 +3019,7 @@ function githubAuthConfigArg(token) {
 
 async function runGit(args, options = {}) {
   const repoRef = parseGitHubRepoReference(options.repoHint ?? "");
-  const token = repoRef ? getGitHubToken(options.slug) : null;
+  const token = repoRef ? getGitHubToken(options.slug, options.session) : null;
   const gitArgs = token
     ? ["-c", githubAuthConfigArg(token), ...args]
     : [...args];
@@ -2929,7 +3082,7 @@ function parseGitChangedFiles(text) {
     }));
 }
 
-async function getProjectGitStatus(dir, slug) {
+async function getProjectGitStatus(dir, slug, session) {
   const repoCheck = await runProcess(
     "git",
     ["rev-parse", "--is-inside-work-tree"],
@@ -2978,7 +3131,7 @@ async function getProjectGitStatus(dir, slug) {
     remoteUrl,
     repoFullName: parseGitHubRepoReference(remoteUrl)?.fullName ?? null,
     lastCommit: lastCommitResult.ok ? lastCommitResult.stdout.trim() : null,
-    tokenConfigured: Boolean(getGitHubToken(slug)),
+    tokenConfigured: Boolean(getGitHubToken(slug, session)),
   };
 }
 
@@ -2996,8 +3149,8 @@ function moveDirectoryContents(sourceDir, destDir) {
 }
 
 async function requestGitHub(slug, path, options = {}) {
-  const token = getGitHubToken(slug);
-  if (!token) throw new Error("Configure GITHUB_TOKEN in project secrets first.");
+  const token = getGitHubToken(slug, options.session);
+  if (!token) throw new Error("Sign in with GitHub or configure GITHUB_TOKEN in project secrets first.");
   const response = await fetch(`${GITHUB_API_ROOT}${path}`, {
     method: options.method ?? "GET",
     headers: {
@@ -3016,8 +3169,8 @@ async function requestGitHub(slug, path, options = {}) {
   return data;
 }
 
-async function listGitHubRepos(slug) {
-  if (!getGitHubToken(slug)) {
+async function listGitHubRepos(slug, session) {
+  if (!getGitHubToken(slug, session)) {
     return {
       configured: false,
       repos: [],
@@ -3026,6 +3179,7 @@ async function listGitHubRepos(slug) {
   const data = await requestGitHub(
     slug,
     "/user/repos?sort=updated&per_page=24&affiliation=owner,collaborator,organization_member",
+    { session },
   );
   return {
     configured: true,
