@@ -691,12 +691,19 @@ function showAutocomplete({ kind, items, anchorStart }) {
     return;
   }
   setAutocompleteState({ kind, items, selected: 0, anchorStart });
-  autocomplete.innerHTML = items
+  const itemsHtml = items
     .map(
       (item, index) =>
         `<div class="ac-item ${index === 0 ? "selected" : ""}" data-idx="${index}">${escapeHtml(item.name)}<span class="ac-desc">${escapeHtml(item.desc ?? "")}</span></div>`,
     )
     .join("");
+  const footerHtml =
+    '<div class="ac-footer">' +
+    '<span><kbd>\u2191</kbd><kbd>\u2193</kbd> nav</span>' +
+    '<span><kbd>\u21b5</kbd> select</span>' +
+    '<span><kbd>esc</kbd> cancel</span>' +
+    "</div>";
+  autocomplete.innerHTML = itemsHtml + footerHtml;
   autocomplete.hidden = false;
   autocomplete.querySelectorAll(".ac-item").forEach((node) => {
     node.addEventListener("click", () => {
