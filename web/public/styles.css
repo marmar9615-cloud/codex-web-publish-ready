@@ -856,6 +856,56 @@ body.workspace-collapsed #app {
     border-color var(--dur-1) var(--ease-out),
     color var(--dur-1) var(--ease-out);
 }
+
+#toast-host {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  min-width: 180px;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: var(--shadow-md, 0 6px 20px rgba(0, 0, 0, 0.45));
+  transform: translateY(8px);
+  opacity: 0;
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+  cursor: pointer;
+}
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast.toast-leaving {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.toast-success {
+  border-color: rgba(120, 210, 160, 0.35);
+  background: linear-gradient(180deg, rgba(120, 210, 160, 0.1), rgba(120, 210, 160, 0.04)), var(--bg-elevated);
+}
+.toast-error {
+  border-color: rgba(255, 138, 154, 0.35);
+  background: linear-gradient(180deg, rgba(255, 138, 154, 0.1), rgba(255, 138, 154, 0.04)), var(--bg-elevated);
+}
+.toast-warn {
+  border-color: rgba(255, 201, 138, 0.35);
+  background: linear-gradient(180deg, rgba(255, 201, 138, 0.1), rgba(255, 201, 138, 0.04)), var(--bg-elevated);
+}
 .pill-button:hover {
   background: rgba(127, 168, 255, 0.1);
   border-color: rgba(127, 168, 255, 0.32);

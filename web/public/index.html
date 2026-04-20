@@ -220,6 +220,9 @@
     <!-- Modals -->
     <div id="modal-root"></div>
 
+    <!-- Toasts -->
+    <div id="toast-host" aria-live="polite" aria-atomic="false"></div>
+
     <script>
       // Keep a rich empty-state hero in #transcript whenever it's empty.
       const transcript = document.getElementById("transcript");
@@ -263,13 +266,19 @@
         if (!code) return;
         const text = code.textContent ?? "";
         const original = btn.textContent;
+        let ok = true;
         try {
           await navigator.clipboard.writeText(text);
           btn.textContent = "Copied";
           btn.classList.add("copied");
         } catch {
+          ok = false;
           btn.textContent = "Copy failed";
         }
+        try {
+          const { showToast } = await import("/toast.js");
+          showToast(ok ? "Copied to clipboard." : "Clipboard access denied.", ok ? "success" : "error");
+        } catch {}
         setTimeout(() => {
           btn.textContent = original;
           btn.classList.remove("copied");

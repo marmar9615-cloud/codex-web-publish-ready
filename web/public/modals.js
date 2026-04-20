@@ -1,5 +1,6 @@
 import { $, load, state, save } from "./state.js";
 import { escapeHtml } from "./utils.js";
+import { showToast } from "./toast.js";
 
 export function createModals({
   rpcCall,
@@ -136,7 +137,7 @@ export function createModals({
             save("settings", state.settings);
             updateStatusBar();
             closeModal();
-            appendSystem(`Model set to ${slug}.`);
+            showToast(`Model set to ${slug}.`, "success");
             await pushSettingsToBackend().catch(() => {});
           });
         });
@@ -1039,7 +1040,7 @@ export function createModals({
                 },
               );
               setFeedback("#project-deploy-feedback", data.deploy?.responseText ?? "Deploy triggered.");
-              appendSystem("Render sync hook triggered.");
+              showToast("Render sync hook triggered.", "success");
               await refreshAll();
             } catch (error) {
               setFeedback("#project-deploy-feedback", error.message, "error");
@@ -1083,7 +1084,10 @@ export function createModals({
                 lastShipResult.ok ? "Ship it completed." : "Ship it stopped on a failing step.",
                 lastShipResult.ok ? "info" : "error",
               );
-              appendSystem(lastShipResult.ok ? "Ship it completed." : "Ship it stopped on a failing step.");
+              showToast(
+                lastShipResult.ok ? "Ship it completed." : "Ship it stopped on a failing step.",
+                lastShipResult.ok ? "success" : "warn",
+              );
               await refreshWhoAmI().catch(() => {});
               await refreshAll();
             } catch (error) {

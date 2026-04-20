@@ -7,6 +7,7 @@ import {
   setAutocompleteState,
 } from "./state.js";
 import { escapeHtml } from "./utils.js";
+import { showToast } from "./toast.js";
 import { createUploads, hydrateWorkdirMedia } from "./uploads.js";
 import { createRenderers } from "./renderers.js";
 import { createModals } from "./modals.js";
@@ -1281,7 +1282,7 @@ async function doLogout() {
   await refreshWhoAmI();
   await refreshModels().catch(() => {});
   updateStatusBar();
-  renderers.appendSystem("Signed out.");
+  showToast("Signed out.", "info");
 }
 
 bootstrap();
