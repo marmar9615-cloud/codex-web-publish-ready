@@ -647,8 +647,8 @@ async function onInput(event) {
   const slashMatch = /(^|\n)(\/[A-Za-z\-]*)$/.exec(textBeforeCursor);
   if (slashMatch) {
     const query = slashMatch[2];
-    const items = state.slashCommands.filter((command) =>
-      command.name.startsWith(query),
+    const items = state.slashCommands.filter(
+      (command) => command.name.startsWith(query) && !command.cliOnly,
     );
     showAutocomplete({
       kind: "slash",
