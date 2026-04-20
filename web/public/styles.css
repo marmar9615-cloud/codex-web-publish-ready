@@ -1673,6 +1673,71 @@ body:not(.signed-in):not(.signed-out) .empty-hero-signed-out { display: none; }
   color: var(--accent-2);
 }
 
+.code-block {
+  position: relative;
+  margin: 10px 0;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--code-bg-soft, rgba(15, 20, 35, 0.55));
+  overflow: hidden;
+}
+.code-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 11px;
+  color: var(--muted);
+}
+.code-block-lang {
+  font-family: var(--mono);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+.code-copy {
+  padding: 2px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-out),
+    background var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+.code-copy:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+.code-copy.copied {
+  border-color: rgba(120, 210, 160, 0.35);
+  background: rgba(120, 210, 160, 0.1);
+  color: rgba(120, 210, 160, 1);
+}
+.code-block pre {
+  margin: 0;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-x: auto;
+}
+.code-block pre code {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  font-size: inherit !important;
+  color: inherit !important;
+}
+
 .cell.system .bubble {
   font-size: 12px;
   color: var(--muted);
