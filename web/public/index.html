@@ -81,25 +81,48 @@
                 <path d="M22.5 7 11 19 5.5 13.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
-            <h1 class="empty-hero-title">How can I help today?</h1>
-            <p class="empty-hero-sub">I can read your code, run commands, apply patches, and browse the web. Try one of these to get started.</p>
-            <div class="empty-hero-chips">
-              <button type="button" class="hero-chip" data-prompt="Give me a plan to add a dark mode toggle.">
-                <span class="hero-chip-tag">plan</span>
-                Plan a feature
-              </button>
-              <button type="button" class="hero-chip" data-prompt="Explain what this project does and show me its architecture.">
-                <span class="hero-chip-tag">explain</span>
-                Explain this repo
-              </button>
-              <button type="button" class="hero-chip" data-prompt="Write tests for the most complex function you can find.">
-                <span class="hero-chip-tag">test</span>
-                Write tests
-              </button>
-              <button type="button" class="hero-chip" data-prompt="Find and fix any obvious bugs in recently-changed files.">
-                <span class="hero-chip-tag">fix</span>
-                Find bugs
-              </button>
+            <div class="empty-hero-signed-in">
+              <h1 class="empty-hero-title">How can I help today?</h1>
+              <p class="empty-hero-sub">I can read your code, run commands, apply patches, and browse the web. Try one of these to get started.</p>
+              <div class="empty-hero-chips">
+                <button type="button" class="hero-chip" data-prompt="Give me a plan to add a dark mode toggle.">
+                  <span class="hero-chip-tag">plan</span>
+                  Plan a feature
+                </button>
+                <button type="button" class="hero-chip" data-prompt="Explain what this project does and show me its architecture.">
+                  <span class="hero-chip-tag">explain</span>
+                  Explain this repo
+                </button>
+                <button type="button" class="hero-chip" data-prompt="Write tests for the most complex function you can find.">
+                  <span class="hero-chip-tag">test</span>
+                  Write tests
+                </button>
+                <button type="button" class="hero-chip" data-prompt="Find and fix any obvious bugs in recently-changed files.">
+                  <span class="hero-chip-tag">fix</span>
+                  Find bugs
+                </button>
+              </div>
+            </div>
+            <div class="empty-hero-signed-out">
+              <h1 class="empty-hero-title">Welcome to Codex Web.</h1>
+              <p class="empty-hero-sub">A browser frontend for the Codex coding agent. Sign in to start a project, run commands, edit files, and deploy in one place.</p>
+              <div class="empty-hero-cta">
+                <button type="button" class="hero-signin primary" data-hero-signin="true">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:6px">
+                    <path d="M3 3h8v8H3z M7 1v12 M1 7h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                  </svg>
+                  Sign in with ChatGPT
+                </button>
+                <button type="button" class="hero-signin ghost" data-hero-signin="true">
+                  Use an API key instead
+                </button>
+              </div>
+              <ul class="empty-hero-features">
+                <li><strong>Projects</strong> · persistent workspaces with git + deploy</li>
+                <li><strong>Files & terminal</strong> · browse, edit, run from the browser</li>
+                <li><strong>Ship it</strong> · tests → build → git push → Render deploy</li>
+                <li><strong>Live preview</strong> · detect dev servers and proxy them here</li>
+              </ul>
             </div>
           </div>
         </template>
@@ -218,6 +241,14 @@
         input.value = chip.dataset.prompt || "";
         input.dispatchEvent(new Event("input", { bubbles: true }));
         input.focus();
+      });
+
+      // Hero "Sign in with ChatGPT" → open the same modal as the footer button
+      document.addEventListener("click", (event) => {
+        const trigger = event.target.closest("[data-hero-signin]");
+        if (!trigger) return;
+        const accountBtn = document.getElementById("account-btn");
+        if (accountBtn) accountBtn.click();
       });
     </script>
     <script type="module" src="/app.js"></script>

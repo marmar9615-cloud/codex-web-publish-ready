@@ -50,6 +50,9 @@ export function createRenderers({
     }
     if (whoami.oauthError)
       status.textContent = `Sign-in failed: ${whoami.oauthError}`;
+    const signedIn = Boolean(whoami.hasOauth || whoami.hasApiKey);
+    document.body.classList.toggle("signed-in", signedIn);
+    document.body.classList.toggle("signed-out", !signedIn);
   }
 
   function renderProjects() {

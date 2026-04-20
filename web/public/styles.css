@@ -1464,9 +1464,88 @@ body.workspace-collapsed #workspace-panel {
   flex: 0 0 auto;
 }
 
+.empty-hero-signed-in,
+.empty-hero-signed-out {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+body.signed-in .empty-hero-signed-in { display: flex; }
+body.signed-out .empty-hero-signed-out { display: flex; }
+/* Default before whoami returns: blank state (prevents a flash of the wrong
+   variant). renderAccount() flips the body class as soon as whoami resolves. */
+body:not(.signed-in):not(.signed-out) .empty-hero-signed-in,
+body:not(.signed-in):not(.signed-out) .empty-hero-signed-out { display: none; }
+.empty-hero-cta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+.hero-signin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border-radius: var(--r-md);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.hero-signin.primary {
+  border: 1px solid rgba(127, 168, 255, 0.45);
+  background: linear-gradient(180deg, rgba(127, 168, 255, 0.22), rgba(127, 168, 255, 0.12));
+  color: #fff;
+  box-shadow: 0 0 0 1px rgba(127, 168, 255, 0.08) inset;
+}
+.hero-signin.primary:hover {
+  background: linear-gradient(180deg, rgba(127, 168, 255, 0.3), rgba(127, 168, 255, 0.18));
+  transform: translateY(-1px);
+}
+.hero-signin.ghost {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-soft);
+}
+.hero-signin.ghost:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+.empty-hero-features {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 20px;
+  max-width: 520px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+}
+.empty-hero-features li::before {
+  content: "›";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--accent-bright);
+  font-weight: 700;
+}
+.empty-hero-features strong {
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .empty-hero-title { font-size: 26px; }
   .empty-hero-chips { grid-template-columns: 1fr; }
+  .empty-hero-features { grid-template-columns: 1fr; }
 }
 
 @keyframes fadeIn {
