@@ -738,6 +738,11 @@ body.workspace-collapsed #workspace-panel {
   padding: 12px;
   background: rgba(255, 255, 255, 0.01);
 }
+#workspace-live-preview {
+  border-top: 1px solid var(--hairline);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.012);
+}
 #workspace-terminal {
   border-top: 1px solid var(--hairline);
   padding: 12px;
@@ -869,6 +874,62 @@ body.workspace-collapsed #workspace-panel {
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
   background: white;
+}
+.workspace-preview-toolbar {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.workspace-preview-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.workspace-preview-field input {
+  font-size: 12.5px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.workspace-preview-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.workspace-preview-port-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.workspace-preview-port-chip {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.workspace-preview-stage {
+  display: flex;
+  justify-content: center;
+}
+.workspace-preview-stage .workspace-empty {
+  width: 100%;
+}
+.workspace-preview-stage.device-desktop .workspace-preview-frame {
+  max-width: 100%;
+}
+.workspace-preview-stage.device-tablet .workspace-preview-frame {
+  max-width: 900px;
+}
+.workspace-preview-stage.device-mobile .workspace-preview-frame {
+  max-width: 420px;
+}
+.workspace-preview-stage.device-mobile .workspace-preview-frame,
+.workspace-preview-stage.device-tablet .workspace-preview-frame {
+  margin-inline: auto;
 }
 .workspace-media-wrap {
   border: 1px solid var(--hairline);
@@ -2250,6 +2311,9 @@ button.diff-expand-all:hover {
     max-width: 100%;
   }
   .hook-grid {
+    grid-template-columns: 1fr;
+  }
+  .workspace-preview-toolbar {
     grid-template-columns: 1fr;
   }
   .workspace-terminal-form {

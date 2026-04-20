@@ -117,6 +117,7 @@ function makeSession(id) {
     defaultWorkdir: workdir,
     workdir,
     activeProjectSlug: null,
+    activePreviewPort: null,
     threads: new Map(),
     activeThreadId: undefined,
     backend: null,
@@ -1299,6 +1300,156 @@ app.get("/api/workdir-file", (req, res) => {
   res.sendFile(filePath);
 });
 
+function isValidPreviewPort(port) {
+  return Number.isInteger(port) && port >= 1024 && port <= 65535 && port !== PORT;
+}
+
+async function detectListeningPreviewPorts() {
+  const result = await runProcess(
+    "lsof",
+    ["-nP", "-iTCP", "-sTCP:LISTEN"],
+    { timeoutMs: 5_000 },
+  );
+  if (!result.ok && result.code !== 1) {
+    throw new Error(result.stderr || "preview port detection failed");
+  }
+  const seen = new Set();
+  const ports = [];
+  for (const line of String(result.stdout ?? "").split(/\r?\n/).slice(1)) {
+    const match = /^(\S+)\s+(\d+)\s+.*:(\d+)\s+\(LISTEN\)$/.exec(line.trim());
+    if (!match) continue;
+    const port = Number.parseInt(match[3], 10);
+    if (!isValidPreviewPort(port) || seen.has(port)) continue;
+    seen.add(port);
+    ports.push({
+      command: match[1],
+      pid: Number.parseInt(match[2], 10),
+      port,
+    });
+  }
+  ports.sort((left, right) => left.port - right.port);
+  return ports;
+}
+
+function rewritePreviewHtml(html, port) {
+  const prefix = `/preview/${port}`;
+  let rewritten = String(html ?? "");
+  if (!/<base\b/i.test(rewritten)) {
+    rewritten = rewritten.replace(
+      /<head([^>]*)>/i,
+      `<head$1><base href="${prefix}/">`,
+    );
+  }
+  return rewritten.replace(
+    /\b(href|src|action)=("|')\/(?!\/)/gi,
+    `$1=$2${prefix}/`,
+  );
+}
+
+async function proxyPreviewRequest(session, req, res) {
+  const port = Number.parseInt(String(req.params.port ?? ""), 10);
+  if (!isValidPreviewPort(port)) {
+    res.status(400).send("invalid preview port");
+    return;
+  }
+  if (session.activePreviewPort !== port) {
+    res.status(403).send("preview port is not active for this session");
+    return;
+  }
+
+  const suffix = req.originalUrl.replace(/^\/preview\/\d+/, "") || "/";
+  const upstreamUrl = `http://127.0.0.1:${port}${suffix}`;
+  const headers = new Headers();
+  const headerAllowlist = [
+    "accept",
+    "accept-language",
+    "cache-control",
+    "content-type",
+    "pragma",
+    "user-agent",
+  ];
+  for (const name of headerAllowlist) {
+    const value = req.headers[name];
+    if (typeof value === "string" && value) {
+      headers.set(name, value);
+    }
+  }
+
+  let upstream;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      method: req.method,
+      headers,
+      redirect: "manual",
+    });
+  } catch (error) {
+    res.status(502).send(`preview unavailable: ${error.message}`);
+    return;
+  }
+
+  const strippedHeaders = new Set([
+    "connection",
+    "content-encoding",
+    "content-length",
+    "content-security-policy",
+    "keep-alive",
+    "transfer-encoding",
+    "x-frame-options",
+  ]);
+  for (const [name, value] of upstream.headers) {
+    const lowered = name.toLowerCase();
+    if (strippedHeaders.has(lowered)) continue;
+    if (lowered === "location" && value.startsWith("/")) {
+      res.setHeader(name, `/preview/${port}${value}`);
+      continue;
+    }
+    res.setHeader(name, value);
+  }
+
+  res.status(upstream.status);
+  const contentType = upstream.headers.get("content-type") ?? "";
+  if (contentType.includes("text/html")) {
+    const html = await upstream.text();
+    res.send(rewritePreviewHtml(html, port));
+    return;
+  }
+  const body = Buffer.from(await upstream.arrayBuffer());
+  res.send(body);
+}
+
+app.get("/api/preview/ports", sameOriginOnly, async (_req, res) => {
+  try {
+    const ports = await detectListeningPreviewPorts();
+    res.json({ ports });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/preview/activate", sameOriginOnly, (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const port = Number.parseInt(String(req.body?.port ?? ""), 10);
+  if (!isValidPreviewPort(port)) {
+    res.status(400).json({ error: "a preview port between 1024 and 65535 is required" });
+    return;
+  }
+  session.activePreviewPort = port;
+  res.json({
+    port,
+    previewBaseUrl: `/preview/${port}`,
+  });
+});
+
+app.get("/preview/:port", (req, res) => {
+  const session = getOrCreateSession(req, res);
+  void proxyPreviewRequest(session, req, res);
+});
+
+app.get("/preview/:port/*", (req, res) => {
+  const session = getOrCreateSession(req, res);
+  void proxyPreviewRequest(session, req, res);
+});
+
 function guessExtensionFromMime(mimeType) {
   switch (mimeType) {
     case "image/png":
@@ -1484,6 +1635,7 @@ function activeProjectSummary(session) {
 function activateProjectForSession(session, slug) {
   if (!slug || slug === "_scratch") {
     session.activeProjectSlug = null;
+    session.activePreviewPort = null;
     session.activeThreadId = undefined;
     session.workdir = session.defaultWorkdir;
     ensureWorkdirScaffold(session.workdir);
@@ -1503,6 +1655,7 @@ function activateProjectForSession(session, slug) {
   if (!existsSync(dir)) return null;
   const project = readProjectMetadata(dir, slug);
   session.activeProjectSlug = slug;
+  session.activePreviewPort = null;
   session.activeThreadId = undefined;
   session.workdir = dir;
   ensureWorkdirScaffold(session.workdir);
