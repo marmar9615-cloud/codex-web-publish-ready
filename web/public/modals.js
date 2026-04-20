@@ -469,15 +469,26 @@ export function createModals({
       lastDeploy: null,
       error: null,
     };
+    const emptyNetlify = {
+      configured: false,
+      hookLabel: null,
+      hasToken: false,
+      hasSiteId: false,
+      recent: null,
+      recentError: null,
+      lastDeploy: null,
+      error: null,
+    };
     if (!slug) {
       return {
         available: false,
         slug: null,
         render: emptyRender,
         vercel: emptyVercel,
+        netlify: emptyNetlify,
       };
     }
-    const [renderData, vercelData] = await Promise.all([
+    const [renderData, vercelData, netlifyData] = await Promise.all([
       fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/render`)
         .then((data) => ({
           configured: Boolean(data.configured),
@@ -499,12 +510,25 @@ export function createModals({
           error: null,
         }))
         .catch((error) => ({ ...emptyVercel, error: error.message })),
+      fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/netlify`)
+        .then((data) => ({
+          configured: Boolean(data.configured),
+          hookLabel: data.hookLabel ?? null,
+          hasToken: Boolean(data.hasToken),
+          hasSiteId: Boolean(data.hasSiteId),
+          recent: Array.isArray(data.recent) ? data.recent : null,
+          recentError: data.recentError ?? null,
+          lastDeploy: data.lastDeploy ?? null,
+          error: null,
+        }))
+        .catch((error) => ({ ...emptyNetlify, error: error.message })),
     ]);
     return {
       available: true,
       slug,
       render: renderData,
       vercel: vercelData,
+      netlify: netlifyData,
     };
   }
 
@@ -719,6 +743,7 @@ export function createModals({
     }
     const render = deployData.render ?? {};
     const vercel = deployData.vercel ?? {};
+    const netlify = deployData.netlify ?? {};
     const renderLast = render.lastDeploy ?? {};
     const renderLastTime = renderLast.lastTriggeredAt
       ? new Date(renderLast.lastTriggeredAt).toLocaleString()
@@ -727,15 +752,23 @@ export function createModals({
     const vercelLastTime = vercelLast.lastTriggeredAt
       ? new Date(vercelLast.lastTriggeredAt).toLocaleString()
       : "Never";
+    const netlifyLast = netlify.lastDeploy ?? {};
+    const netlifyLastTime = netlifyLast.lastTriggeredAt
+      ? new Date(netlifyLast.lastTriggeredAt).toLocaleString()
+      : "Never";
     const renderError = render.error
       ? `<div class="manager-note manager-note-error">Render panel: ${escapeHtml(render.error)}</div>`
       : "";
     const vercelError = vercel.error
       ? `<div class="manager-note manager-note-error">Vercel panel: ${escapeHtml(vercel.error)}</div>`
       : "";
+    const netlifyError = netlify.error
+      ? `<div class="manager-note manager-note-error">Netlify panel: ${escapeHtml(netlify.error)}</div>`
+      : "";
     return `
       ${renderError}
       ${vercelError}
+      ${netlifyError}
 
       <section class="deploy-provider">
         <header class="deploy-provider-head">
@@ -815,8 +848,118 @@ export function createModals({
         ${renderVercelRecent(vercel)}
       </section>
 
+      <section class="deploy-provider">
+        <header class="deploy-provider-head">
+          <h3>Netlify</h3>
+          <div class="manager-meta">${netlify.configured ? escapeHtml(netlify.hookLabel ?? "configured") : "not configured"}</div>
+        </header>
+        <p class="settings-copy">Triggers a Netlify build hook. Optionally add <code>NETLIFY_TOKEN</code> + <code>NETLIFY_SITE_ID</code> to show recent deployment status.</p>
+        <div class="modal-row">
+          <label>Netlify build hook URL</label>
+          <input id="netlify-hook-url" placeholder="https://api.netlify.com/build_hooks/..." />
+        </div>
+        <div class="modal-row modal-row-split">
+          <div>
+            <label>Netlify API token (optional)</label>
+            <input id="netlify-token" type="password" placeholder="nfp_…" autocomplete="off" ${netlify.hasToken ? 'data-has="true"' : ""} />
+            ${netlify.hasToken ? '<div class="manager-meta">Saved. Leave blank to keep; enter a new value to rotate.</div>' : ""}
+          </div>
+          <div>
+            <label>Site ID</label>
+            <input id="netlify-site-id" placeholder="abc123-…" ${netlify.hasSiteId ? 'data-has="true"' : ""} />
+            ${netlify.hasSiteId ? '<div class="manager-meta">Saved.</div>' : ""}
+          </div>
+        </div>
+        <div class="modal-actions modal-actions-left">
+          <button id="netlify-save" type="button">Save config</button>
+          <button id="netlify-refresh" type="button">Refresh</button>
+          <button id="netlify-trigger" type="button" class="primary" ${netlify.configured ? "" : "disabled"}>Trigger deploy</button>
+        </div>
+        <div class="manager-card">
+          <div class="manager-card-head">
+            <div>
+              <h4>Last trigger</h4>
+              <div class="manager-meta">${escapeHtml(netlifyLastTime)}${netlifyLast.lastStatus ? ` · status ${netlifyLast.lastStatus}` : ""}</div>
+            </div>
+          </div>
+          ${
+            netlifyLast.lastResponseText
+              ? `<pre>${escapeHtml(netlifyLast.lastResponseText)}</pre>`
+              : '<div class="manager-blurb">No deploys triggered from this project yet.</div>'
+          }
+        </div>
+        ${renderNetlifyRecent(netlify)}
+      </section>
+
       <div id="project-deploy-feedback" class="manager-note" hidden></div>
     `;
+  }
+
+  function renderNetlifyRecent(netlify) {
+    if (netlify.recentError) {
+      return `<div class="manager-note manager-note-error">Recent deployments: ${escapeHtml(netlify.recentError)}</div>`;
+    }
+    if (!netlify.recent) {
+      return "";
+    }
+    if (!netlify.recent.length) {
+      return '<div class="manager-blurb">No recent Netlify deployments for this site id.</div>';
+    }
+    return `
+      <div class="manager-list vercel-recent">
+        ${netlify.recent
+          .map((deploy) => {
+            const ts = deploy.createdAt
+              ? new Date(deploy.createdAt).toLocaleString()
+              : "";
+            const stateClass = (deploy.state ?? "").toLowerCase();
+            return `
+              <article class="manager-card vercel-deploy vercel-state-${escapeHtml(mapNetlifyState(stateClass))}">
+                <div class="manager-card-head">
+                  <div>
+                    <h4>${escapeHtml(deploy.target ?? "deploy")} · ${escapeHtml(deploy.branch ?? "—")}</h4>
+                    <div class="manager-meta">${escapeHtml(ts)}${deploy.state ? ` · ${escapeHtml(deploy.state)}` : ""}</div>
+                  </div>
+                  ${
+                    deploy.url
+                      ? `<a class="button-link" target="_blank" rel="noopener" href="${escapeHtml(deploy.url)}">Open</a>`
+                      : ""
+                  }
+                </div>
+                ${
+                  deploy.commitMessage
+                    ? `<div class="manager-blurb">${escapeHtml(deploy.commitMessage)}</div>`
+                    : ""
+                }
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  function mapNetlifyState(state) {
+    switch (state) {
+      case "ready":
+        return "ready";
+      case "building":
+      case "uploading":
+      case "processing":
+      case "prepared":
+      case "enqueued":
+        return "building";
+      case "new":
+      case "pending":
+        return "queued";
+      case "error":
+      case "rejected":
+        return "error";
+      case "canceled":
+        return "canceled";
+      default:
+        return "unknown";
+    }
   }
 
   function renderVercelRecent(vercel) {
@@ -1380,6 +1523,68 @@ export function createModals({
             } catch (error) {
               setFeedback("#project-deploy-feedback", error.message, "error");
               appendSystem(`vercel deploy failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+
+          mount.querySelector("#netlify-refresh")?.addEventListener("click", () => {
+            void refreshDeploy();
+          });
+          mount.querySelector("#netlify-save")?.addEventListener("click", async () => {
+            const slug = currentDeployData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#netlify-save");
+            button.disabled = true;
+            try {
+              const payload = {
+                buildHookUrl:
+                  mount.querySelector("#netlify-hook-url")?.value.trim() ?? "",
+              };
+              const tokenInput = mount.querySelector("#netlify-token");
+              if (tokenInput && tokenInput.value !== "") {
+                payload.token = tokenInput.value;
+              }
+              const siteIdInput = mount.querySelector("#netlify-site-id");
+              if (siteIdInput && siteIdInput.value !== "") {
+                payload.siteId = siteIdInput.value;
+              }
+              await fetchProjectJson(
+                `/api/projects/${encodeURIComponent(slug)}/deploy/netlify/config`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload),
+                },
+              );
+              setFeedback("#project-deploy-feedback", "Netlify config saved.");
+              await refreshDeploy();
+            } catch (error) {
+              setFeedback("#project-deploy-feedback", error.message, "error");
+              appendSystem(`netlify config save failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+          mount.querySelector("#netlify-trigger")?.addEventListener("click", async () => {
+            const slug = currentDeployData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#netlify-trigger");
+            button.disabled = true;
+            try {
+              const data = await fetchProjectJson(
+                `/api/projects/${encodeURIComponent(slug)}/deploy/netlify/trigger`,
+                { method: "POST" },
+              );
+              setFeedback(
+                "#project-deploy-feedback",
+                data.deploy?.responseText ?? "Netlify deploy triggered.",
+              );
+              showToast("Netlify build hook triggered.", "success");
+              await refreshDeploy();
+            } catch (error) {
+              setFeedback("#project-deploy-feedback", error.message, "error");
+              appendSystem(`netlify deploy failed: ${error.message}`, "error");
             } finally {
               button.disabled = false;
             }

@@ -1364,6 +1364,82 @@ app.post(
   },
 );
 
+app.get("/api/projects/:slug/deploy/netlify", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  try {
+    res.json(await loadNetlifyDeployState(slug));
+  } catch (error) {
+    res.status(502).json({ error: error.message });
+  }
+});
+
+app.post(
+  "/api/projects/:slug/deploy/netlify/config",
+  sameOriginOnly,
+  async (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    if (!getProjectSecretsCipherKey()) {
+      res.status(503).json({ error: "CODEX_WEB_SECRETS_KEY is not configured" });
+      return;
+    }
+    const secrets = readProjectSecrets(slug);
+    const setOrDelete = (key, value) => {
+      const trimmed = typeof value === "string" ? value.trim() : "";
+      if (trimmed) {
+        secrets[key] = trimmed;
+      } else if (value === "" || value === null) {
+        delete secrets[key];
+      }
+    };
+    if ("buildHookUrl" in (req.body ?? {})) {
+      setOrDelete("NETLIFY_BUILD_HOOK_URL", req.body.buildHookUrl);
+    }
+    if ("token" in (req.body ?? {})) {
+      setOrDelete("NETLIFY_TOKEN", req.body.token);
+    }
+    if ("siteId" in (req.body ?? {})) {
+      setOrDelete("NETLIFY_SITE_ID", req.body.siteId);
+    }
+    writeProjectSecrets(slug, secrets);
+    try {
+      res.json({ ok: true, deploy: await loadNetlifyDeployState(slug) });
+    } catch (error) {
+      res.status(502).json({ error: error.message });
+    }
+  },
+);
+
+app.post(
+  "/api/projects/:slug/deploy/netlify/trigger",
+  sameOriginOnly,
+  async (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    try {
+      res.json({ ok: true, deploy: await triggerNetlifyDeploy(slug) });
+    } catch (error) {
+      res.status(502).json({ error: error.message });
+    }
+  },
+);
+
 app.get(
   "/api/projects/:slug/logs/render",
   sameOriginOnly,
@@ -2520,6 +2596,30 @@ function getVercelTeamId(slug) {
   );
 }
 
+function getNetlifyBuildHookUrl(slug) {
+  return (
+    getProjectSecretValue(slug, "NETLIFY_BUILD_HOOK_URL") ??
+    process.env.CODEX_WEB_NETLIFY_BUILD_HOOK_URL ??
+    null
+  );
+}
+
+function getNetlifyToken(slug) {
+  return (
+    getProjectSecretValue(slug, "NETLIFY_TOKEN") ??
+    process.env.CODEX_WEB_NETLIFY_TOKEN ??
+    null
+  );
+}
+
+function getNetlifySiteId(slug) {
+  return (
+    getProjectSecretValue(slug, "NETLIFY_SITE_ID") ??
+    process.env.CODEX_WEB_NETLIFY_SITE_ID ??
+    null
+  );
+}
+
 function redactHookUrl(url) {
   if (!url) return null;
   try {
@@ -2960,6 +3060,95 @@ async function triggerVercelDeploy(slug) {
     status: response.status,
     responseText: truncateOutput(text, 1500),
     deploy: project.deploy?.vercel ?? null,
+  };
+}
+
+async function loadNetlifyDeployState(slug) {
+  const project = readProjectMetadata(projectDirForSlug(slug), slug);
+  const lastDeploy = project.deploy?.netlify ?? {};
+  const hookUrl = getNetlifyBuildHookUrl(slug);
+  const token = getNetlifyToken(slug);
+  const siteId = getNetlifySiteId(slug);
+  let recent = null;
+  let recentError = null;
+  if (token && siteId) {
+    try {
+      const response = await fetch(
+        `https://api.netlify.com/api/v1/sites/${encodeURIComponent(siteId)}/deploys?per_page=5`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) {
+        recentError = `Netlify API returned ${response.status}: ${truncateOutput(text, 300)}`;
+      } else {
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = [];
+        }
+        const list = Array.isArray(data) ? data : [];
+        recent = list.slice(0, 5).map((d) => ({
+          uid: d.id ?? null,
+          url: d.deploy_ssl_url ?? d.deploy_url ?? d.url ?? null,
+          state: d.state ?? null,
+          createdAt: d.created_at ?? null,
+          target: d.context ?? null,
+          branch: d.branch ?? null,
+          commitMessage: d.title ?? d.commit_ref ?? null,
+        }));
+      }
+    } catch (error) {
+      recentError = error.message;
+    }
+  }
+  return {
+    configured: Boolean(hookUrl),
+    hookLabel: redactHookUrl(hookUrl),
+    hasToken: Boolean(token),
+    hasSiteId: Boolean(siteId),
+    recent,
+    recentError,
+    lastDeploy: {
+      lastTriggeredAt: lastDeploy.lastTriggeredAt ?? null,
+      lastStatus: lastDeploy.lastStatus ?? null,
+      lastOk: lastDeploy.lastOk ?? null,
+      lastResponseText: lastDeploy.lastResponseText ?? null,
+    },
+  };
+}
+
+async function triggerNetlifyDeploy(slug) {
+  const hookUrl = getNetlifyBuildHookUrl(slug);
+  if (!hookUrl) {
+    throw new Error(
+      "Configure NETLIFY_BUILD_HOOK_URL in project secrets first.",
+    );
+  }
+  const response = await fetch(hookUrl, { method: "POST" });
+  const text = await response.text();
+  const project = updateProjectMetadata(slug, (current) => ({
+    ...current,
+    deploy: {
+      ...(current.deploy ?? {}),
+      netlify: {
+        lastTriggeredAt: Date.now(),
+        lastStatus: response.status,
+        lastOk: response.ok,
+        lastResponseText: truncateOutput(text, 1500),
+      },
+    },
+  }));
+  return {
+    ok: response.ok,
+    status: response.status,
+    responseText: truncateOutput(text, 1500),
+    deploy: project.deploy?.netlify ?? null,
   };
 }
 
