@@ -1969,6 +1969,20 @@ button.diff-expand-all:hover {
   line-height: 1.55;
   margin-top: 10px;
 }
+.manager-card pre {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--hairline);
+  background: var(--code-bg);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
 .manager-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1994,6 +2008,16 @@ button.diff-expand-all:hover {
   color: var(--text-soft);
   font-size: 12px;
   line-height: 1.5;
+}
+.manager-note[data-kind="error"] {
+  border-color: rgba(255, 138, 154, 0.25);
+  background: rgba(255, 138, 154, 0.08);
+}
+.repo-choice-row {
+  margin-bottom: 12px;
+}
+.ship-toggle {
+  margin-top: 10px;
 }
 .manager-empty {
   padding: 16px 14px;

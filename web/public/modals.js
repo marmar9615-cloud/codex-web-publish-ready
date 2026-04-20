@@ -296,6 +296,688 @@ export function createModals({
     }
   }
 
+  async function fetchProjectJson(url, options = {}) {
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error ?? `request failed (${response.status})`);
+    }
+    return data;
+  }
+
+  async function loadProjectGitData() {
+    const slug = state.whoami?.activeProjectSlug;
+    if (!slug) {
+      return {
+        available: false,
+        slug: null,
+        status: null,
+        githubConfigured: false,
+        repos: [],
+        error: null,
+      };
+    }
+    try {
+      const [statusData, reposData] = await Promise.all([
+        fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/git/status`),
+        fetchProjectJson(`/api/github/repos?slug=${encodeURIComponent(slug)}`).catch(
+          () => ({
+            configured: false,
+            repos: [],
+          }),
+        ),
+      ]);
+      return {
+        available: true,
+        slug,
+        status: statusData.status ?? null,
+        githubConfigured: Boolean(reposData.configured),
+        repos: reposData.repos ?? [],
+        error: null,
+      };
+    } catch (error) {
+      return {
+        available: true,
+        slug,
+        status: null,
+        githubConfigured: false,
+        repos: [],
+        error: error.message,
+      };
+    }
+  }
+
+  async function loadProjectDeployData() {
+    const slug = state.whoami?.activeProjectSlug;
+    if (!slug) {
+      return {
+        available: false,
+        slug: null,
+        configured: false,
+        hookLabel: null,
+        lastDeploy: null,
+        error: null,
+      };
+    }
+    try {
+      const data = await fetchProjectJson(
+        `/api/projects/${encodeURIComponent(slug)}/deploy/render`,
+      );
+      return {
+        available: true,
+        slug,
+        configured: Boolean(data.configured),
+        hookLabel: data.hookLabel ?? null,
+        lastDeploy: data.lastDeploy ?? null,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        available: true,
+        slug,
+        configured: false,
+        hookLabel: null,
+        lastDeploy: null,
+        error: error.message,
+      };
+    }
+  }
+
+  async function loadProjectShipData() {
+    const slug = state.whoami?.activeProjectSlug;
+    if (!slug) {
+      return {
+        available: false,
+        slug: null,
+        commands: {
+          testsCommand: "",
+          buildCommand: "",
+          source: "none",
+        },
+        git: null,
+        deploy: null,
+        error: null,
+      };
+    }
+    try {
+      const data = await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/ship`);
+      return {
+        available: true,
+        slug,
+        commands: data.commands ?? {
+          testsCommand: "",
+          buildCommand: "",
+          source: "none",
+        },
+        git: data.git ?? null,
+        deploy: data.deploy ?? null,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        available: true,
+        slug,
+        commands: {
+          testsCommand: "",
+          buildCommand: "",
+          source: "none",
+        },
+        git: null,
+        deploy: null,
+        error: error.message,
+      };
+    }
+  }
+
+  function renderGitChangedFiles(status) {
+    if (!status?.changedFiles?.length) {
+      return '<div class="manager-empty">No local git changes detected right now.</div>';
+    }
+    return `
+      <div class="manager-tags">
+        ${status.changedFiles
+          .slice(0, 16)
+          .map(
+            (file) =>
+              `<span class="manager-tag">${escapeHtml(`${file.status} ${file.path}`)}</span>`,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  function renderRepoSuggestions(repos) {
+    if (!repos?.length) return "";
+    return `
+      <div class="choice-row repo-choice-row">
+        ${repos
+          .slice(0, 8)
+          .map(
+            (repo) => `
+          <button
+            type="button"
+            class="choice-chip"
+            data-project-repo="${escapeHtml(repo.fullName ?? "")}"
+            data-project-branch="${escapeHtml(repo.defaultBranch ?? "")}"
+          >
+            ${escapeHtml(repo.fullName ?? "")}
+          </button>
+        `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  function renderProjectGitPanel(gitData) {
+    if (!gitData.available) {
+      return '<div class="manager-empty">Activate a named project from the sidebar before connecting GitHub.</div>';
+    }
+    if (gitData.error) {
+      return `<div class="manager-empty">GitHub panel failed to load: ${escapeHtml(gitData.error)}</div>`;
+    }
+    const status = gitData.status;
+    return `
+      <p class="settings-copy">Clone a repo into this project, inspect the working tree, commit, push, and open a pull request. Private GitHub actions use a <code>GITHUB_TOKEN</code> from the project Secrets tab.</p>
+      ${
+        gitData.githubConfigured
+          ? '<div class="manager-note">GitHub repo suggestions are live because a token is configured for this project.</div>'
+          : '<div class="manager-note">Add <code>GITHUB_TOKEN</code> in Secrets if you want private repo access and pull request creation.</div>'
+      }
+      <div class="modal-row">
+        <label>Clone from GitHub</label>
+        <input id="project-git-repo" placeholder="owner/repo or https://github.com/owner/repo" />
+      </div>
+      <div class="modal-row">
+        <label>Branch</label>
+        <input id="project-git-branch" placeholder="main" />
+      </div>
+      ${renderRepoSuggestions(gitData.repos)}
+      <div class="modal-actions modal-actions-left">
+        <button id="project-git-clone" type="button" class="primary">Clone repo</button>
+        <button id="project-git-refresh" type="button">Refresh status</button>
+      </div>
+      ${
+        !status?.connected
+          ? '<div class="manager-empty">This project is not a git checkout yet.</div>'
+          : `
+          <div class="manager-list">
+            <article class="manager-card">
+              <div class="manager-card-head">
+                <div>
+                  <h3>${escapeHtml(status.repoFullName ?? "Git repository")}</h3>
+                  <div class="manager-meta">${escapeHtml(status.branch ?? "detached HEAD")} · ${escapeHtml(status.tracking ?? "no upstream")}</div>
+                </div>
+                <div class="manager-meta">${status.dirty ? "dirty" : "clean"}${status.ahead ? ` · ahead ${status.ahead}` : ""}${status.behind ? ` · behind ${status.behind}` : ""}</div>
+              </div>
+              ${
+                status.lastCommit
+                  ? `<div class="manager-blurb">Last commit: ${escapeHtml(status.lastCommit)}</div>`
+                  : ""
+              }
+              ${
+                status.remoteUrl
+                  ? `<div class="manager-meta">${escapeHtml(status.remoteUrl)}</div>`
+                  : ""
+              }
+              ${renderGitChangedFiles(status)}
+            </article>
+          </div>
+          <div class="hook-grid">
+            <div class="modal-row">
+              <label>Commit message</label>
+              <input id="project-git-commit-message" placeholder="Ship project update" />
+            </div>
+            <div class="modal-row">
+              <label>Pull request title</label>
+              <input id="project-git-pr-title" placeholder="Ship project update" />
+            </div>
+          </div>
+          <div class="modal-row">
+            <label>Pull request body</label>
+            <textarea id="project-git-pr-body" rows="5" placeholder="What changed and how you verified it"></textarea>
+          </div>
+          <div class="modal-actions modal-actions-left">
+            <button id="project-git-commit" type="button">Commit staged work</button>
+            <button id="project-git-push" type="button">Push branch</button>
+            <button id="project-git-pr" type="button">Open pull request</button>
+          </div>
+        `
+      }
+      <div id="project-git-feedback" class="manager-note" hidden></div>
+    `;
+  }
+
+  function renderProjectDeployPanel(deployData) {
+    if (!deployData.available) {
+      return '<div class="manager-empty">Activate a named project from the sidebar before configuring deploy hooks.</div>';
+    }
+    if (deployData.error) {
+      return `<div class="manager-empty">Deploy panel failed to load: ${escapeHtml(deployData.error)}</div>`;
+    }
+    const lastDeploy = deployData.lastDeploy ?? {};
+    const lastTime = lastDeploy.lastTriggeredAt
+      ? new Date(lastDeploy.lastTriggeredAt).toLocaleString()
+      : "Never";
+    return `
+      <p class="settings-copy">This project can trigger a Render sync hook directly from the browser. The hook URL is stored in encrypted project secrets as <code>RENDER_SYNC_HOOK_URL</code>.</p>
+      <div class="modal-row">
+        <label>Render sync hook URL</label>
+        <input id="render-hook-url" placeholder="https://api.render.com/sync/..." />
+      </div>
+      <div class="modal-actions modal-actions-left">
+        <button id="render-hook-save" type="button">Save hook</button>
+        <button id="render-hook-refresh" type="button">Refresh</button>
+        <button id="render-hook-trigger" type="button" class="primary" ${deployData.configured ? "" : "disabled"}>Trigger deploy</button>
+      </div>
+      <div class="manager-list">
+        <article class="manager-card">
+          <div class="manager-card-head">
+            <div>
+              <h3>Render deploy hook</h3>
+              <div class="manager-meta">${deployData.configured ? escapeHtml(deployData.hookLabel ?? "configured") : "not configured"}</div>
+            </div>
+            <div class="manager-meta">Last trigger: ${escapeHtml(lastTime)}</div>
+          </div>
+          ${
+            lastDeploy.lastResponseText
+              ? `<pre>${escapeHtml(lastDeploy.lastResponseText)}</pre>`
+              : '<div class="manager-blurb">No deploys have been triggered from this project yet.</div>'
+          }
+        </article>
+      </div>
+      <div id="project-deploy-feedback" class="manager-note" hidden></div>
+    `;
+  }
+
+  function renderShipSteps(result) {
+    if (!result?.steps?.length) {
+      return '<div class="manager-empty">No ship run has started yet.</div>';
+    }
+    return `
+      <div class="manager-list">
+        ${result.steps
+          .map(
+            (step) => `
+          <article class="manager-card">
+            <div class="manager-card-head">
+              <div>
+                <h3>${escapeHtml(step.name ?? "step")}</h3>
+                <div class="manager-meta">${escapeHtml(step.command ?? "")}</div>
+              </div>
+              <div class="manager-meta">${step.ok ? "passed" : "failed"}${step.code != null ? ` · ${step.code}` : ""}</div>
+            </div>
+            ${
+              step.output
+                ? `<pre>${escapeHtml(step.output)}</pre>`
+                : '<div class="manager-blurb">No output captured.</div>'
+            }
+          </article>
+        `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  function renderProjectShipPanel(shipData, lastResult) {
+    if (!shipData.available) {
+      return '<div class="manager-empty">Activate a named project from the sidebar before running Ship it.</div>';
+    }
+    if (shipData.error) {
+      return `<div class="manager-empty">Ship it failed to load: ${escapeHtml(shipData.error)}</div>`;
+    }
+    return `
+      <p class="settings-copy">Run tests, optionally build, commit what changed, push the active branch, and trigger the Render sync hook in one sequence.</p>
+      <div class="hook-grid">
+        <div class="modal-row">
+          <label>Tests command</label>
+          <input id="ship-tests-command" value="${escapeHtml(shipData.commands?.testsCommand ?? "")}" placeholder="npm test" />
+        </div>
+        <div class="modal-row">
+          <label>Build command</label>
+          <input id="ship-build-command" value="${escapeHtml(shipData.commands?.buildCommand ?? "")}" placeholder="npm run build" />
+        </div>
+      </div>
+      <div class="modal-row">
+        <label>Commit message</label>
+        <input id="ship-commit-message" placeholder="Ship project update" />
+      </div>
+      <label class="hook-toggle ship-toggle">
+        <input id="ship-deploy-after" type="checkbox" ${shipData.deploy?.configured ? "checked" : ""} ${shipData.deploy?.configured ? "" : "disabled"} />
+        <span>Trigger the configured Render deploy after git push</span>
+      </label>
+      <div class="manager-meta">Detection source: ${escapeHtml(shipData.commands?.source ?? "none")} · Git ${shipData.git?.connected ? "connected" : "not connected"} · Render ${shipData.deploy?.configured ? "configured" : "not configured"}</div>
+      <div class="modal-actions modal-actions-left">
+        <button id="ship-run" type="button" class="primary">Run Ship it</button>
+        <button id="ship-refresh" type="button">Refresh plan</button>
+      </div>
+      <div id="project-ship-feedback" class="manager-note" hidden></div>
+      ${renderShipSteps(lastResult)}
+    `;
+  }
+
+  async function openProjectToolsModal(initialTab = "git") {
+    let currentTab = initialTab;
+    let currentGitData = {
+      available: false,
+      slug: null,
+      status: null,
+      githubConfigured: false,
+      repos: [],
+      error: null,
+    };
+    let currentDeployData = {
+      available: false,
+      slug: null,
+      configured: false,
+      hookLabel: null,
+      lastDeploy: null,
+      error: null,
+    };
+    let currentShipData = {
+      available: false,
+      slug: null,
+      commands: {
+        testsCommand: "",
+        buildCommand: "",
+        source: "none",
+      },
+      git: null,
+      deploy: null,
+      error: null,
+    };
+    let lastShipResult = null;
+
+    const panel = (tab, body) => `
+      <section class="settings-panel" data-project-panel="${tab}" ${currentTab === tab ? "" : "hidden"}>
+        ${body}
+      </section>
+    `;
+
+    const renderModal = () => `
+      <h2>Project tools</h2>
+      <p class="settings-copy">${escapeHtml(state.whoami?.activeProjectName ?? "Project")} · ${escapeHtml(state.whoami?.activeProjectSlug ?? "No active project")}</p>
+      <div class="settings-tabs">
+        <button type="button" class="settings-tab ${currentTab === "git" ? "active" : ""}" data-project-tab="git">GitHub</button>
+        <button type="button" class="settings-tab ${currentTab === "deploy" ? "active" : ""}" data-project-tab="deploy">Deploy</button>
+        <button type="button" class="settings-tab ${currentTab === "ship" ? "active" : ""}" data-project-tab="ship">Ship it</button>
+      </div>
+      ${panel("git", renderProjectGitPanel(currentGitData))}
+      ${panel("deploy", renderProjectDeployPanel(currentDeployData))}
+      ${panel("ship", renderProjectShipPanel(currentShipData, lastShipResult))}
+      <div class="modal-actions">
+        <button id="project-tools-close" type="button" class="ghost">Close</button>
+      </div>
+    `;
+
+    modal(
+      renderModal(),
+      (mount) => {
+        const rerender = () => {
+          mount.innerHTML = renderModal();
+          bind();
+        };
+
+        const setFeedback = (selector, message, kind = "info") => {
+          const node = mount.querySelector(selector);
+          if (!node) return;
+          node.hidden = !message;
+          node.textContent = message ?? "";
+          node.dataset.kind = kind;
+        };
+
+        const refreshGit = async () => {
+          currentGitData = await loadProjectGitData();
+          rerender();
+        };
+
+        const refreshDeploy = async () => {
+          currentDeployData = await loadProjectDeployData();
+          rerender();
+        };
+
+        const refreshShip = async () => {
+          currentShipData = await loadProjectShipData();
+          rerender();
+        };
+
+        const refreshAll = async () => {
+          [currentGitData, currentDeployData, currentShipData] = await Promise.all([
+            loadProjectGitData(),
+            loadProjectDeployData(),
+            loadProjectShipData(),
+          ]);
+          rerender();
+        };
+
+        const bind = () => {
+          mount.querySelector("#project-tools-close")?.addEventListener("click", closeModal);
+          mount.querySelectorAll("[data-project-tab]").forEach((button) => {
+            button.addEventListener("click", () => {
+              currentTab = button.dataset.projectTab ?? "git";
+              rerender();
+            });
+          });
+
+          mount.querySelectorAll("[data-project-repo]").forEach((button) => {
+            button.addEventListener("click", () => {
+              const repoInput = mount.querySelector("#project-git-repo");
+              const branchInput = mount.querySelector("#project-git-branch");
+              if (repoInput) repoInput.value = button.dataset.projectRepo ?? "";
+              if (branchInput && !branchInput.value.trim()) {
+                branchInput.value = button.dataset.projectBranch ?? "";
+              }
+            });
+          });
+
+          mount.querySelector("#project-git-refresh")?.addEventListener("click", () => {
+            void refreshGit();
+          });
+          mount.querySelector("#project-git-clone")?.addEventListener("click", async () => {
+            const slug = currentGitData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#project-git-clone");
+            button.disabled = true;
+            try {
+              const repo = mount.querySelector("#project-git-repo")?.value.trim() ?? "";
+              const branch = mount.querySelector("#project-git-branch")?.value.trim() ?? "";
+              await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/git/clone`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ repo, branch }),
+              });
+              setFeedback("#project-git-feedback", `Cloned ${repo}.`);
+              appendSystem(`Cloned ${repo} into ${state.whoami?.activeProjectName ?? slug}.`);
+              await refreshWhoAmI().catch(() => {});
+              await refreshAll();
+            } catch (error) {
+              setFeedback("#project-git-feedback", error.message, "error");
+              appendSystem(`git clone failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+          mount.querySelector("#project-git-commit")?.addEventListener("click", async () => {
+            const slug = currentGitData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#project-git-commit");
+            button.disabled = true;
+            try {
+              const message =
+                mount.querySelector("#project-git-commit-message")?.value.trim() ?? "";
+              const data = await fetchProjectJson(
+                `/api/projects/${encodeURIComponent(slug)}/git/commit`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ message }),
+                },
+              );
+              setFeedback(
+                "#project-git-feedback",
+                data.noChanges ? "Nothing to commit." : "Commit created.",
+              );
+              await refreshAll();
+            } catch (error) {
+              setFeedback("#project-git-feedback", error.message, "error");
+              appendSystem(`git commit failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+          mount.querySelector("#project-git-push")?.addEventListener("click", async () => {
+            const slug = currentGitData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#project-git-push");
+            button.disabled = true;
+            try {
+              await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/git/push`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+              });
+              setFeedback("#project-git-feedback", "Branch pushed.");
+              await refreshAll();
+            } catch (error) {
+              setFeedback("#project-git-feedback", error.message, "error");
+              appendSystem(`git push failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+          mount.querySelector("#project-git-pr")?.addEventListener("click", async () => {
+            const slug = currentGitData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#project-git-pr");
+            button.disabled = true;
+            try {
+              const title =
+                mount.querySelector("#project-git-pr-title")?.value.trim() ?? "";
+              const body =
+                mount.querySelector("#project-git-pr-body")?.value.trim() ?? "";
+              const data = await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/git/pr`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title, body }),
+              });
+              setFeedback(
+                "#project-git-feedback",
+                `PR #${data.pullRequest?.number ?? "?"} created.`,
+              );
+              if (data.pullRequest?.url) {
+                window.open(data.pullRequest.url, "_blank", "noopener");
+              }
+            } catch (error) {
+              setFeedback("#project-git-feedback", error.message, "error");
+              appendSystem(`pull request failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+
+          mount.querySelector("#render-hook-refresh")?.addEventListener("click", () => {
+            void refreshDeploy();
+          });
+          mount.querySelector("#render-hook-save")?.addEventListener("click", async () => {
+            const slug = currentDeployData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#render-hook-save");
+            button.disabled = true;
+            try {
+              const syncHookUrl =
+                mount.querySelector("#render-hook-url")?.value.trim() ?? "";
+              const data = await fetchProjectJson(
+                `/api/projects/${encodeURIComponent(slug)}/deploy/render/config`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ syncHookUrl }),
+                },
+              );
+              currentDeployData = {
+                ...currentDeployData,
+                ...(data.deploy ?? {}),
+              };
+              setFeedback("#project-deploy-feedback", syncHookUrl ? "Hook saved." : "Hook cleared.");
+              await refreshAll();
+            } catch (error) {
+              setFeedback("#project-deploy-feedback", error.message, "error");
+              appendSystem(`render hook save failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+          mount.querySelector("#render-hook-trigger")?.addEventListener("click", async () => {
+            const slug = currentDeployData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#render-hook-trigger");
+            button.disabled = true;
+            try {
+              const data = await fetchProjectJson(
+                `/api/projects/${encodeURIComponent(slug)}/deploy/render/trigger`,
+                {
+                  method: "POST",
+                },
+              );
+              setFeedback("#project-deploy-feedback", data.deploy?.responseText ?? "Deploy triggered.");
+              appendSystem("Render sync hook triggered.");
+              await refreshAll();
+            } catch (error) {
+              setFeedback("#project-deploy-feedback", error.message, "error");
+              appendSystem(`render deploy failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+
+          mount.querySelector("#ship-refresh")?.addEventListener("click", () => {
+            void refreshShip();
+          });
+          mount.querySelector("#ship-run")?.addEventListener("click", async () => {
+            const slug = currentShipData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#ship-run");
+            button.disabled = true;
+            try {
+              lastShipResult = await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/ship`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  testsCommand:
+                    mount.querySelector("#ship-tests-command")?.value.trim() ?? "",
+                  buildCommand:
+                    mount.querySelector("#ship-build-command")?.value.trim() ?? "",
+                  commitMessage:
+                    mount.querySelector("#ship-commit-message")?.value.trim() ?? "",
+                  deployAfter:
+                    mount.querySelector("#ship-deploy-after")?.checked ?? false,
+                }),
+              });
+              setFeedback(
+                "#project-ship-feedback",
+                lastShipResult.ok ? "Ship it completed." : "Ship it stopped on a failing step.",
+                lastShipResult.ok ? "info" : "error",
+              );
+              appendSystem(lastShipResult.ok ? "Ship it completed." : "Ship it stopped on a failing step.");
+              await refreshWhoAmI().catch(() => {});
+              await refreshAll();
+            } catch (error) {
+              setFeedback("#project-ship-feedback", error.message, "error");
+              appendSystem(`ship it failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+        };
+
+        bind();
+        void refreshAll();
+      },
+      { className: "modal-wide" },
+    );
+  }
+
   function renderMemoryItems(items) {
     if (!items?.length) {
       return `<div class="manager-empty">No AGENTS.md or CLAUDE.md files were discovered for this session.</div>`;
@@ -1896,6 +2578,7 @@ export function createModals({
     openMcpModal,
     openPermissionsModal,
     openPluginsModal,
+    openProjectToolsModal,
     openSettings,
     openSkillsModal,
     openUserInputModal,

@@ -23,7 +23,9 @@ import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -44,6 +46,15 @@ const CODEX_BIN = process.env.CODEX_BIN ?? "";
 const IS_PROD = process.env.NODE_ENV === "production";
 const PROJECT_METADATA_FILE = ".codex-project.json";
 const PROJECT_SECRETS_FILE = ".codex-secrets.enc";
+const PROJECT_INTERNAL_EXCLUDES = [
+  PROJECT_METADATA_FILE,
+  PROJECT_SECRETS_FILE,
+  ".codex/",
+  ".uploads/",
+];
+const COMMAND_TIMEOUT_MS = 15 * 60 * 1000;
+const SHIP_OUTPUT_LIMIT = 12_000;
+const GITHUB_API_ROOT = "https://api.github.com";
 
 const CHATGPT_ISSUER = (
   process.env.CODEX_CHATGPT_ISSUER ?? "https://auth.openai.com"
@@ -652,6 +663,501 @@ app.post("/api/projects/:slug/secrets", sameOriginOnly, (req, res) => {
   });
 });
 
+app.get("/api/github/repos", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.query.slug ?? session.activeProjectSlug ?? "");
+  try {
+    res.json(await listGitHubRepos(slug));
+  } catch (error) {
+    res.status(502).json({ error: error.message });
+  }
+});
+
+app.get("/api/projects/:slug/git/status", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  try {
+    res.json({
+      status: await getProjectGitStatus(context.dir, slug),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/:slug/git/clone", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const repo = String(req.body?.repo ?? "").trim();
+  const branch = String(req.body?.branch ?? "").trim();
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  if (!repo) {
+    res.status(400).json({ error: "repo is required" });
+    return;
+  }
+  if (!ensureCloneTargetReady(context.dir)) {
+    res.status(409).json({
+      error: "project already has files; create a fresh project before cloning",
+    });
+    return;
+  }
+  const repoRef = parseGitHubRepoReference(repo);
+  const cloneUrl = repoRef?.cloneUrl ?? repo;
+  const tempDir = join(PROJECTS_ROOT, `.clone-${slug}-${Date.now()}`);
+  const cloneArgs = ["clone"];
+  if (branch) cloneArgs.push("--branch", branch);
+  cloneArgs.push(cloneUrl, tempDir);
+  const result = await runGit(cloneArgs, {
+    cwd: PROJECTS_ROOT,
+    slug,
+    repoHint: cloneUrl,
+    timeoutMs: 20 * 60 * 1000,
+  });
+  if (!result.ok) {
+    rmSync(tempDir, { recursive: true, force: true });
+    res.status(502).json({
+      error: truncateOutput(
+        [result.stdout, result.stderr].filter(Boolean).join("\n"),
+      ),
+    });
+    return;
+  }
+  try {
+    moveDirectoryContents(tempDir, context.dir);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+  ensureWorkdirScaffold(context.dir);
+  ensureProjectGitExclude(context.dir);
+  updateProjectMetadata(slug, (current) => ({
+    ...current,
+    git: {
+      ...(current.git ?? {}),
+      repo: repoRef?.fullName ?? repo,
+      defaultBranch: branch || current.git?.defaultBranch || null,
+    },
+  }));
+  if (session.activeProjectSlug === slug) {
+    killBackend(session, `git clone:${slug}`);
+  }
+  res.json({
+    ok: true,
+    status: await getProjectGitStatus(context.dir, slug),
+  });
+});
+
+app.post("/api/projects/:slug/git/commit", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const message = String(req.body?.message ?? "").trim();
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  if (!message) {
+    res.status(400).json({ error: "message is required" });
+    return;
+  }
+  const status = await getProjectGitStatus(context.dir, slug);
+  if (!status.connected) {
+    res.status(409).json({ error: "clone a git repo into this project first" });
+    return;
+  }
+  ensureProjectGitExclude(context.dir);
+  const addResult = await runProcess(
+    "git",
+    [
+      "add",
+      "-A",
+      "--",
+      ".",
+      `:(exclude)${PROJECT_METADATA_FILE}`,
+      `:(exclude)${PROJECT_SECRETS_FILE}`,
+      ":(exclude).codex",
+      ":(exclude).uploads",
+    ],
+    {
+      cwd: context.dir,
+      env: { GIT_TERMINAL_PROMPT: "0" },
+    },
+  );
+  if (!addResult.ok) {
+    res.status(500).json({
+      error: truncateOutput(addResult.stderr || addResult.stdout),
+    });
+    return;
+  }
+  const stagedStatus = await runProcess("git", ["status", "--porcelain"], {
+    cwd: context.dir,
+    env: { GIT_TERMINAL_PROMPT: "0" },
+  });
+  if (!stagedStatus.stdout.trim()) {
+    res.json({
+      ok: true,
+      noChanges: true,
+      status: await getProjectGitStatus(context.dir, slug),
+    });
+    return;
+  }
+  const commitResult = await runProcess("git", ["commit", "-m", message], {
+    cwd: context.dir,
+    env: { GIT_TERMINAL_PROMPT: "0" },
+  });
+  if (!commitResult.ok) {
+    res.status(502).json({
+      error: truncateOutput(
+        [commitResult.stdout, commitResult.stderr].filter(Boolean).join("\n"),
+      ),
+    });
+    return;
+  }
+  res.json({
+    ok: true,
+    output: truncateOutput(
+      [commitResult.stdout, commitResult.stderr].filter(Boolean).join("\n"),
+    ),
+    status: await getProjectGitStatus(context.dir, slug),
+  });
+});
+
+app.post("/api/projects/:slug/git/push", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const remote = String(req.body?.remote ?? "origin").trim() || "origin";
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  const status = await getProjectGitStatus(context.dir, slug);
+  if (!status.connected) {
+    res.status(409).json({ error: "clone a git repo into this project first" });
+    return;
+  }
+  const branch = String(req.body?.branch ?? status.branch ?? "").trim();
+  if (!branch) {
+    res.status(409).json({ error: "current branch is unavailable" });
+    return;
+  }
+  const remoteUrlResult = await runProcess("git", ["remote", "get-url", remote], {
+    cwd: context.dir,
+    env: { GIT_TERMINAL_PROMPT: "0" },
+  });
+  const repoHint = remoteUrlResult.ok ? remoteUrlResult.stdout.trim() : "";
+  const pushResult = await runGit(
+    ["push", "-u", remote, `HEAD:${branch}`],
+    {
+      cwd: context.dir,
+      slug,
+      repoHint,
+      timeoutMs: 20 * 60 * 1000,
+    },
+  );
+  if (!pushResult.ok) {
+    res.status(502).json({
+      error: truncateOutput(
+        [pushResult.stdout, pushResult.stderr].filter(Boolean).join("\n"),
+      ),
+    });
+    return;
+  }
+  res.json({
+    ok: true,
+    output: truncateOutput(
+      [pushResult.stdout, pushResult.stderr].filter(Boolean).join("\n"),
+    ),
+    status: await getProjectGitStatus(context.dir, slug),
+  });
+});
+
+app.post("/api/projects/:slug/git/pr", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const title = String(req.body?.title ?? "").trim();
+  const body = String(req.body?.body ?? "").trim();
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  if (!title) {
+    res.status(400).json({ error: "title is required" });
+    return;
+  }
+  const status = await getProjectGitStatus(context.dir, slug);
+  const repoRef = parseGitHubRepoReference(status.remoteUrl ?? "");
+  if (!repoRef?.fullName) {
+    res.status(409).json({ error: "origin remote is not a GitHub repository" });
+    return;
+  }
+  if (!status.branch) {
+    res.status(409).json({ error: "current branch is unavailable" });
+    return;
+  }
+  try {
+    const repo = await requestGitHub(slug, `/repos/${repoRef.fullName}`);
+    const pull = await requestGitHub(slug, `/repos/${repoRef.fullName}/pulls`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title,
+        body,
+        head: status.branch,
+        base: String(req.body?.base ?? repo.default_branch ?? "main"),
+      }),
+    });
+    res.json({
+      ok: true,
+      pullRequest: {
+        number: pull.number,
+        url: pull.html_url,
+        title: pull.title,
+      },
+    });
+  } catch (error) {
+    res.status(502).json({ error: error.message });
+  }
+});
+
+app.get("/api/projects/:slug/deploy/render", sameOriginOnly, (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  res.json(loadRenderDeployState(slug));
+});
+
+app.post(
+  "/api/projects/:slug/deploy/render/config",
+  sameOriginOnly,
+  (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const hookUrl = String(req.body?.syncHookUrl ?? "").trim();
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    if (!getProjectSecretsCipherKey()) {
+      res.status(503).json({ error: "CODEX_WEB_SECRETS_KEY is not configured" });
+      return;
+    }
+    const secrets = readProjectSecrets(slug);
+    if (hookUrl) {
+      secrets.RENDER_SYNC_HOOK_URL = hookUrl;
+    } else {
+      delete secrets.RENDER_SYNC_HOOK_URL;
+    }
+    writeProjectSecrets(slug, secrets);
+    res.json({
+      ok: true,
+      deploy: loadRenderDeployState(slug),
+    });
+  },
+);
+
+app.post(
+  "/api/projects/:slug/deploy/render/trigger",
+  sameOriginOnly,
+  async (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    try {
+      res.json({
+        ok: true,
+        deploy: await triggerRenderSync(slug),
+      });
+    } catch (error) {
+      res.status(502).json({ error: error.message });
+    }
+  },
+);
+
+app.get("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  res.json({
+    commands: detectProjectShipCommands(context.dir, slug),
+    git: await getProjectGitStatus(context.dir, slug),
+    deploy: loadRenderDeployState(slug),
+  });
+});
+
+app.post("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const context = getProjectContext(session, slug);
+  if (!context) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  const testsCommand = String(req.body?.testsCommand ?? "").trim();
+  const buildCommand = String(req.body?.buildCommand ?? "").trim();
+  const commitMessage = String(req.body?.commitMessage ?? "").trim();
+  const deployAfter = req.body?.deployAfter !== false;
+  const steps = [];
+
+  if (testsCommand) {
+    const result = await runShell(testsCommand, { cwd: context.dir });
+    steps.push(summarizeStep("tests", result, testsCommand));
+    if (!result.ok) {
+      res.status(200).json({ ok: false, steps });
+      return;
+    }
+  }
+
+  if (buildCommand) {
+    const result = await runShell(buildCommand, { cwd: context.dir });
+    steps.push(summarizeStep("build", result, buildCommand));
+    if (!result.ok) {
+      res.status(200).json({ ok: false, steps });
+      return;
+    }
+  }
+
+  const gitStatus = await getProjectGitStatus(context.dir, slug);
+  if (gitStatus.connected) {
+    ensureProjectGitExclude(context.dir);
+    if (commitMessage) {
+      const addResult = await runProcess(
+        "git",
+        [
+          "add",
+          "-A",
+          "--",
+          ".",
+          `:(exclude)${PROJECT_METADATA_FILE}`,
+          `:(exclude)${PROJECT_SECRETS_FILE}`,
+          ":(exclude).codex",
+          ":(exclude).uploads",
+        ],
+        {
+          cwd: context.dir,
+          env: { GIT_TERMINAL_PROMPT: "0" },
+        },
+      );
+      steps.push(summarizeStep("git add", addResult, "git add -A"));
+      if (!addResult.ok) {
+        res.status(200).json({ ok: false, steps });
+        return;
+      }
+      const stagedResult = await runProcess("git", ["status", "--porcelain"], {
+        cwd: context.dir,
+        env: { GIT_TERMINAL_PROMPT: "0" },
+      });
+      if (stagedResult.stdout.trim()) {
+        const commitResult = await runProcess("git", ["commit", "-m", commitMessage], {
+          cwd: context.dir,
+          env: { GIT_TERMINAL_PROMPT: "0" },
+        });
+        steps.push(summarizeStep("commit", commitResult, `git commit -m "${commitMessage}"`));
+        if (!commitResult.ok) {
+          res.status(200).json({ ok: false, steps });
+          return;
+        }
+      } else {
+        steps.push({
+          name: "commit",
+          command: `git commit -m "${commitMessage}"`,
+          ok: true,
+          code: 0,
+          timedOut: false,
+          output: "No repo changes were staged, so commit was skipped.",
+        });
+      }
+    }
+
+    if (gitStatus.branch) {
+      const remoteUrlResult = await runProcess("git", ["remote", "get-url", "origin"], {
+        cwd: context.dir,
+        env: { GIT_TERMINAL_PROMPT: "0" },
+      });
+      const pushResult = await runGit(
+        ["push", "-u", "origin", `HEAD:${gitStatus.branch}`],
+        {
+          cwd: context.dir,
+          slug,
+          repoHint: remoteUrlResult.ok ? remoteUrlResult.stdout.trim() : "",
+          timeoutMs: 20 * 60 * 1000,
+        },
+      );
+      steps.push(
+        summarizeStep(
+          "push",
+          pushResult,
+          `git push -u origin HEAD:${gitStatus.branch}`,
+        ),
+      );
+      if (!pushResult.ok) {
+        res.status(200).json({ ok: false, steps });
+        return;
+      }
+    }
+  }
+
+  if (deployAfter) {
+    try {
+      const deploy = await triggerRenderSync(slug);
+      steps.push({
+        name: "deploy",
+        command: "Render sync hook",
+        ok: Boolean(deploy.ok),
+        code: deploy.status,
+        timedOut: false,
+        output: deploy.responseText,
+      });
+      if (!deploy.ok) {
+        res.status(200).json({ ok: false, steps });
+        return;
+      }
+    } catch (error) {
+      steps.push({
+        name: "deploy",
+        command: "Render sync hook",
+        ok: false,
+        code: null,
+        timedOut: false,
+        output: error.message,
+      });
+      res.status(200).json({ ok: false, steps });
+      return;
+    }
+  }
+
+  res.json({
+    ok: true,
+    steps,
+    git: await getProjectGitStatus(context.dir, slug),
+    deploy: loadRenderDeployState(slug),
+  });
+});
+
 app.post("/api/login", sameOriginOnly, (req, res) => {
   const session = getOrCreateSession(req, res);
   const { apiKey } = req.body ?? {};
@@ -881,6 +1387,20 @@ function writeProjectMetadata(dir, project) {
   );
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
+}
+
+function updateProjectMetadata(slug, updater) {
+  const dir = projectDirForSlug(slug);
+  const current = readProjectMetadata(dir, slug);
+  const next = updater(cloneJson(current)) ?? current;
+  next.slug = slug;
+  next.updatedAt = Date.now();
+  writeProjectMetadata(dir, next);
+  return next;
+}
+
 function serializeProject(session, project, dir, options = {}) {
   return {
     slug: project.slug,
@@ -890,6 +1410,33 @@ function serializeProject(session, project, dir, options = {}) {
     system: Boolean(options.system),
     createdAt: project.createdAt ?? null,
     updatedAt: project.updatedAt ?? null,
+  };
+}
+
+function getProjectContext(session, slug, options = {}) {
+  const allowScratch = options.allowScratch === true;
+  if (slug === "_scratch" && allowScratch) {
+    ensureWorkdirScaffold(session.defaultWorkdir);
+    return {
+      slug,
+      dir: session.defaultWorkdir,
+      project: {
+        slug,
+        name: "Scratch workspace",
+        createdAt: null,
+        updatedAt: null,
+      },
+      system: true,
+    };
+  }
+  if (!slug || slug === "_scratch") return null;
+  const dir = projectDirForSlug(slug);
+  if (!existsSync(dir)) return null;
+  return {
+    slug,
+    dir,
+    project: readProjectMetadata(dir, slug),
+    system: false,
   };
 }
 
@@ -962,6 +1509,434 @@ function activateProjectForSession(session, slug) {
 
 function projectSecretsPath(slug) {
   return join(projectDirForSlug(slug), PROJECT_SECRETS_FILE);
+}
+
+function getProjectSecretValue(slug, key) {
+  if (!slug) return process.env[key] ?? null;
+  const secrets = readProjectSecrets(slug);
+  return secrets[key] ?? process.env[key] ?? null;
+}
+
+function getGitHubToken(slug) {
+  return (
+    getProjectSecretValue(slug, "GITHUB_TOKEN") ??
+    getProjectSecretValue(slug, "GH_TOKEN") ??
+    process.env.CODEX_WEB_GITHUB_TOKEN ??
+    null
+  );
+}
+
+function getRenderSyncHookUrl(slug) {
+  return (
+    getProjectSecretValue(slug, "RENDER_SYNC_HOOK_URL") ??
+    getProjectSecretValue(slug, "RENDER_DEPLOY_HOOK_URL") ??
+    process.env.CODEX_WEB_RENDER_SYNC_HOOK_URL ??
+    null
+  );
+}
+
+function redactHookUrl(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return "configured";
+  }
+}
+
+function truncateOutput(text, limit = SHIP_OUTPUT_LIMIT) {
+  const value = String(text ?? "");
+  return value.length <= limit
+    ? value
+    : `${value.slice(0, limit)}\n…truncated…`;
+}
+
+function runProcess(command, args, options = {}) {
+  const cwd = options.cwd ?? __dirname;
+  const timeoutMs = options.timeoutMs ?? COMMAND_TIMEOUT_MS;
+  const env = {
+    ...process.env,
+    ...(options.env ?? {}),
+  };
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const child = spawn(command, args, {
+      cwd,
+      env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill("SIGTERM");
+      } catch {}
+      setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {}
+      }, 1500).unref();
+    }, timeoutMs);
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve({
+        ok: false,
+        code: null,
+        signal: null,
+        stdout,
+        stderr: stderr || error.message,
+        timedOut,
+      });
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({
+        ok: code === 0 && !timedOut,
+        code,
+        signal,
+        stdout,
+        stderr,
+        timedOut,
+      });
+    });
+  });
+}
+
+function runShell(command, options = {}) {
+  const shell = process.env.SHELL ?? "zsh";
+  return runProcess(shell, ["-lc", command], options);
+}
+
+function parseGitHubRepoReference(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const shortMatch = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(raw);
+  if (shortMatch) {
+    const fullName = `${shortMatch[1]}/${shortMatch[2]}`;
+    return {
+      owner: shortMatch[1],
+      name: shortMatch[2],
+      fullName,
+      cloneUrl: `https://github.com/${fullName}.git`,
+      htmlUrl: `https://github.com/${fullName}`,
+    };
+  }
+  const sshMatch = /^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/.exec(raw);
+  if (sshMatch) {
+    const fullName = `${sshMatch[1]}/${sshMatch[2]}`;
+    return {
+      owner: sshMatch[1],
+      name: sshMatch[2],
+      fullName,
+      cloneUrl: `https://github.com/${fullName}.git`,
+      htmlUrl: `https://github.com/${fullName}`,
+    };
+  }
+  try {
+    const url = new URL(raw);
+    if (url.hostname !== "github.com") return null;
+    const parts = url.pathname.replace(/^\/+|\/+$/g, "").split("/");
+    if (parts.length < 2) return null;
+    const owner = parts[0];
+    const name = parts[1].replace(/\.git$/, "");
+    const fullName = `${owner}/${name}`;
+    return {
+      owner,
+      name,
+      fullName,
+      cloneUrl: `https://github.com/${fullName}.git`,
+      htmlUrl: `https://github.com/${fullName}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function githubAuthConfigArg(token) {
+  return `http.https://github.com/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`;
+}
+
+async function runGit(args, options = {}) {
+  const repoRef = parseGitHubRepoReference(options.repoHint ?? "");
+  const token = repoRef ? getGitHubToken(options.slug) : null;
+  const gitArgs = token
+    ? ["-c", githubAuthConfigArg(token), ...args]
+    : [...args];
+  return runProcess("git", gitArgs, {
+    cwd: options.cwd,
+    timeoutMs: options.timeoutMs,
+    env: {
+      GIT_TERMINAL_PROMPT: "0",
+      ...(options.env ?? {}),
+    },
+  });
+}
+
+function ensureProjectGitExclude(dir) {
+  const excludePath = join(dir, ".git", "info", "exclude");
+  if (!existsSync(excludePath)) return;
+  const current = readFileSync(excludePath, "utf8");
+  let next = current;
+  for (const entry of PROJECT_INTERNAL_EXCLUDES) {
+    if (next.includes(entry)) continue;
+    next += `${next.endsWith("\n") || next === "" ? "" : "\n"}${entry}\n`;
+  }
+  if (next !== current) {
+    writeFileSync(excludePath, next);
+  }
+}
+
+function parseGitStatusSummary(line) {
+  const match =
+    /^## (?<branch>[^. ]+)(?:\.\.\.(?<tracking>[^\s]+))?(?: \[(?<detail>[^\]]+)\])?/.exec(
+      String(line ?? "").trim(),
+    );
+  if (!match?.groups) {
+    return {
+      branch: null,
+      tracking: null,
+      ahead: 0,
+      behind: 0,
+    };
+  }
+  const detail = match.groups.detail ?? "";
+  const aheadMatch = /ahead (\d+)/.exec(detail);
+  const behindMatch = /behind (\d+)/.exec(detail);
+  return {
+    branch: match.groups.branch ?? null,
+    tracking: match.groups.tracking ?? null,
+    ahead: Number.parseInt(aheadMatch?.[1] ?? "0", 10),
+    behind: Number.parseInt(behindMatch?.[1] ?? "0", 10),
+  };
+}
+
+function parseGitChangedFiles(text) {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .slice(1)
+    .filter(Boolean)
+    .map((line) => ({
+      status: line.slice(0, 2).trim() || line.slice(0, 2),
+      path: line.slice(3).trim(),
+    }));
+}
+
+async function getProjectGitStatus(dir, slug) {
+  const repoCheck = await runProcess(
+    "git",
+    ["rev-parse", "--is-inside-work-tree"],
+    {
+      cwd: dir,
+      env: { GIT_TERMINAL_PROMPT: "0" },
+    },
+  );
+  if (!repoCheck.ok || repoCheck.stdout.trim() !== "true") {
+    return {
+      connected: false,
+      branch: null,
+      tracking: null,
+      ahead: 0,
+      behind: 0,
+      dirty: false,
+      changedFiles: [],
+      remoteUrl: null,
+      repoFullName: null,
+      lastCommit: null,
+    };
+  }
+  ensureProjectGitExclude(dir);
+  const [statusResult, remoteResult, lastCommitResult] = await Promise.all([
+    runProcess("git", ["status", "--short", "--branch"], {
+      cwd: dir,
+      env: { GIT_TERMINAL_PROMPT: "0" },
+    }),
+    runProcess("git", ["remote", "get-url", "origin"], {
+      cwd: dir,
+      env: { GIT_TERMINAL_PROMPT: "0" },
+    }),
+    runProcess("git", ["log", "-1", "--pretty=%h %s"], {
+      cwd: dir,
+      env: { GIT_TERMINAL_PROMPT: "0" },
+    }),
+  ]);
+  const lines = String(statusResult.stdout ?? "").split(/\r?\n/).filter(Boolean);
+  const summary = parseGitStatusSummary(lines[0] ?? "");
+  const remoteUrl = remoteResult.ok ? remoteResult.stdout.trim() : null;
+  return {
+    connected: true,
+    ...summary,
+    dirty: lines.length > 1,
+    changedFiles: parseGitChangedFiles(statusResult.stdout),
+    remoteUrl,
+    repoFullName: parseGitHubRepoReference(remoteUrl)?.fullName ?? null,
+    lastCommit: lastCommitResult.ok ? lastCommitResult.stdout.trim() : null,
+    tokenConfigured: Boolean(getGitHubToken(slug)),
+  };
+}
+
+function ensureCloneTargetReady(dir) {
+  const entries = readdirSync(dir, { withFileTypes: true }).filter(
+    (entry) => !PROJECT_INTERNAL_EXCLUDES.includes(`${entry.name}/`) && !PROJECT_INTERNAL_EXCLUDES.includes(entry.name),
+  );
+  return entries.length === 0;
+}
+
+function moveDirectoryContents(sourceDir, destDir) {
+  for (const name of readdirSync(sourceDir)) {
+    renameSync(join(sourceDir, name), join(destDir, name));
+  }
+}
+
+async function requestGitHub(slug, path, options = {}) {
+  const token = getGitHubToken(slug);
+  if (!token) throw new Error("Configure GITHUB_TOKEN in project secrets first.");
+  const response = await fetch(`${GITHUB_API_ROOT}${path}`, {
+    method: options.method ?? "GET",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "codex-web",
+      ...(options.headers ?? {}),
+    },
+    body: options.body,
+  });
+  const text = await response.text();
+  const data = text ? safeJsonParse(text) : null;
+  if (!response.ok) {
+    throw new Error(data?.message ?? `GitHub request failed (${response.status})`);
+  }
+  return data;
+}
+
+async function listGitHubRepos(slug) {
+  if (!getGitHubToken(slug)) {
+    return {
+      configured: false,
+      repos: [],
+    };
+  }
+  const data = await requestGitHub(
+    slug,
+    "/user/repos?sort=updated&per_page=24&affiliation=owner,collaborator,organization_member",
+  );
+  return {
+    configured: true,
+    repos: Array.isArray(data)
+      ? data.map((repo) => ({
+          id: repo.id,
+          fullName: repo.full_name,
+          private: Boolean(repo.private),
+          defaultBranch: repo.default_branch ?? null,
+          htmlUrl: repo.html_url,
+        }))
+      : [],
+  };
+}
+
+function loadRenderDeployState(slug) {
+  const project = readProjectMetadata(projectDirForSlug(slug), slug);
+  const lastDeploy = project.deploy?.render ?? {};
+  const hookUrl = getRenderSyncHookUrl(slug);
+  return {
+    configured: Boolean(hookUrl),
+    hookLabel: redactHookUrl(hookUrl),
+    lastDeploy: {
+      lastTriggeredAt: lastDeploy.lastTriggeredAt ?? null,
+      lastStatus: lastDeploy.lastStatus ?? null,
+      lastOk: lastDeploy.lastOk ?? null,
+      lastResponseText: lastDeploy.lastResponseText ?? null,
+    },
+  };
+}
+
+async function triggerRenderSync(slug) {
+  const hookUrl = getRenderSyncHookUrl(slug);
+  if (!hookUrl) {
+    throw new Error("Configure RENDER_SYNC_HOOK_URL in project secrets first.");
+  }
+  const response = await fetch(hookUrl);
+  const text = await response.text();
+  const project = updateProjectMetadata(slug, (current) => ({
+    ...current,
+    deploy: {
+      ...(current.deploy ?? {}),
+      render: {
+        lastTriggeredAt: Date.now(),
+        lastStatus: response.status,
+        lastOk: response.ok,
+        lastResponseText: truncateOutput(text, 1500),
+      },
+    },
+  }));
+  return {
+    ok: response.ok,
+    status: response.status,
+    responseText: truncateOutput(text, 1500),
+    deploy: project.deploy?.render ?? null,
+  };
+}
+
+function detectProjectShipCommands(dir, slug) {
+  const project = readProjectMetadata(dir, slug);
+  const configured = project.ship ?? {};
+  const packageJsonPath = join(dir, "package.json");
+  if (configured.testsCommand || configured.buildCommand) {
+    return {
+      testsCommand: configured.testsCommand ?? "",
+      buildCommand: configured.buildCommand ?? "",
+      source: "saved",
+    };
+  }
+  if (existsSync(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+      return {
+        testsCommand: pkg.scripts?.test ? "npm test" : "",
+        buildCommand: pkg.scripts?.build ? "npm run build" : "",
+        source: "package.json",
+      };
+    } catch {}
+  }
+  if (existsSync(join(dir, "Cargo.toml"))) {
+    return {
+      testsCommand: "cargo test",
+      buildCommand: "cargo build",
+      source: "Cargo.toml",
+    };
+  }
+  if (existsSync(join(dir, "pytest.ini")) || existsSync(join(dir, "pyproject.toml"))) {
+    return {
+      testsCommand: "pytest",
+      buildCommand: "",
+      source: "pytest",
+    };
+  }
+  return {
+    testsCommand: "",
+    buildCommand: "",
+    source: "none",
+  };
+}
+
+function summarizeStep(name, result, command) {
+  return {
+    name,
+    command,
+    ok: Boolean(result.ok),
+    code: result.code,
+    timedOut: Boolean(result.timedOut),
+    output: truncateOutput(
+      [result.stdout, result.stderr].filter(Boolean).join("\n").trim(),
+    ),
+  };
 }
 
 function getProjectSecretsCipherKey() {

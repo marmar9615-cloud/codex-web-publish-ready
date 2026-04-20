@@ -733,6 +733,15 @@ function bindUi() {
   $("#new-thread").addEventListener("click", newThread);
   $("#account-btn").addEventListener("click", onAccountClick);
   $("#settings-btn").addEventListener("click", () => modals.openSettings());
+  $("#workspace-github-btn")?.addEventListener("click", () => {
+    void modals.openProjectToolsModal("git");
+  });
+  $("#workspace-deploy-btn")?.addEventListener("click", () => {
+    void modals.openProjectToolsModal("deploy");
+  });
+  $("#workspace-ship-btn")?.addEventListener("click", () => {
+    void modals.openProjectToolsModal("ship");
+  });
   $("#new-project-btn")?.addEventListener("click", () => {
     void createProject();
   });
