@@ -31,6 +31,17 @@
           <button id="thread-filter-active" type="button" class="filter-pill active" role="tab" aria-selected="true">Active</button>
           <button id="thread-filter-archived" type="button" class="filter-pill" role="tab" aria-selected="false">Archived</button>
         </div>
+        <section class="sidebar-section" aria-labelledby="projects-heading">
+          <div class="sidebar-section-head">
+            <h2 id="projects-heading">Projects</h2>
+            <button id="new-project-btn" type="button" class="icon-btn ghost" title="New project" aria-label="New project">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M10 4.5v11M4.5 10h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div id="projects" aria-label="Projects"></div>
+        </section>
         <nav id="threads" aria-label="Conversations"></nav>
         <footer>
           <div id="account-info">
@@ -43,8 +54,12 @@
 
       <main id="chat">
         <div id="chat-header">
-          <div id="thread-title">New conversation</div>
+          <div class="chat-header-main">
+            <div id="thread-title">New conversation</div>
+            <div id="workspace-root-chip" class="header-subtitle" hidden></div>
+          </div>
           <div id="status-bar" aria-label="Session status">
+            <button id="workspace-toggle-btn" type="button" class="pill ghost-pill">Files</button>
             <span id="backend-pill" class="pill">backend: …</span>
             <span id="account-pill" class="pill" hidden>account: …</span>
             <span id="model-pill" class="pill">model: …</span>
@@ -130,6 +145,33 @@
           </div>
         </form>
       </main>
+
+      <aside id="workspace-panel" aria-label="Workspace files">
+        <header class="workspace-header">
+          <div>
+            <div class="workspace-eyebrow">Workspace</div>
+            <div class="workspace-title-row">
+              <strong>Files</strong>
+              <span id="workspace-status" class="muted">disconnected</span>
+            </div>
+            <div id="workspace-root-path" class="workspace-root-path">No active workspace</div>
+          </div>
+          <div class="workspace-actions">
+            <button id="workspace-refresh-btn" type="button" class="ghost">Refresh</button>
+            <button id="workspace-run-tests-btn" type="button" class="ghost">Run tests</button>
+            <button id="workspace-close-btn" type="button" class="ghost">Hide</button>
+          </div>
+        </header>
+        <div id="workspace-shell">
+          <div id="workspace-files" aria-label="Workspace file tree"></div>
+          <div id="workspace-viewer" aria-label="Workspace file viewer">
+            <div class="workspace-empty">
+              Select a file from the workspace tree to preview it here.
+            </div>
+          </div>
+        </div>
+        <section id="workspace-runner" aria-label="Workspace test runner"></section>
+      </aside>
     </div>
 
     <!-- Modals -->

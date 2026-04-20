@@ -42,6 +42,7 @@ export function createNotificationHandlers({
   onThreadStarted,
   onTurnStarted,
   onTurnFinished,
+  onFsChanged,
   onStandaloneCommandDelta,
 }) {
   async function refreshChatgptAuthTokens(message) {
@@ -380,6 +381,8 @@ export function createNotificationHandlers({
       case "mcpServer/oauthLogin/completed":
         return;
       case "fs/changed":
+        onFsChanged?.(params);
+        return;
       case "fuzzyFileSearch/sessionCompleted":
       case "fuzzyFileSearch/sessionUpdated":
       case "serverRequest/resolved":

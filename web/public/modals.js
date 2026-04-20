@@ -259,6 +259,43 @@ export function createModals({
     }
   }
 
+  async function loadProjectSecretsData() {
+    const slug = state.whoami?.activeProjectSlug;
+    if (!slug) {
+      return {
+        available: false,
+        configured: false,
+        keys: [],
+        slug: null,
+        error: null,
+      };
+    }
+    try {
+      const response = await fetch(
+        `/api/projects/${encodeURIComponent(slug)}/secrets`,
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error ?? `secret list failed (${response.status})`);
+      }
+      return {
+        available: true,
+        configured: Boolean(data.configured),
+        keys: data.keys ?? [],
+        slug,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        available: true,
+        configured: false,
+        keys: [],
+        slug,
+        error: error.message,
+      };
+    }
+  }
+
   function renderMemoryItems(items) {
     if (!items?.length) {
       return `<div class="manager-empty">No AGENTS.md or CLAUDE.md files were discovered for this session.</div>`;
@@ -279,6 +316,34 @@ export function createModals({
               ? `<div class="manager-blurb">${escapeHtml(item.preview)}</div>`
               : '<div class="manager-blurb muted">Empty file</div>'
           }
+        </article>
+      `,
+      )
+      .join("");
+  }
+
+  function renderProjectSecrets(secretsData) {
+    if (!secretsData.available) {
+      return '<div class="manager-empty">Activate a named project from the sidebar to manage project secrets.</div>';
+    }
+    if (secretsData.error) {
+      return `<div class="manager-empty">Secrets failed to load: ${escapeHtml(secretsData.error)}</div>`;
+    }
+    if (!secretsData.keys?.length) {
+      return '<div class="manager-empty">No secrets stored for this project yet.</div>';
+    }
+    return secretsData.keys
+      .map(
+        (key) => `
+        <article class="manager-card">
+          <div class="manager-card-head">
+            <div>
+              <h3>${escapeHtml(key)}</h3>
+              <div class="manager-meta">Stored for ${escapeHtml(state.whoami?.activeProjectName ?? secretsData.slug ?? "project")}</div>
+            </div>
+            <button type="button" class="ghost" data-action="delete-secret" data-secret-key="${escapeHtml(key)}">Delete</button>
+          </div>
+          <div class="manager-blurb">Values stay encrypted at rest and are only injected into the backend environment when this project workspace is active.</div>
         </article>
       `,
       )
@@ -1235,9 +1300,10 @@ export function createModals({
       await refreshModels().catch(() => {});
     }
 
-    const [hooksState, memoriesData] = await Promise.all([
+    const [hooksState, memoriesData, secretsData] = await Promise.all([
       loadHooksEditorState(),
       loadMemoriesData(),
+      loadProjectSecretsData(),
     ]);
     const settings = state.settings;
     const config = state.configSnapshot?.config ?? {};
@@ -1270,6 +1336,7 @@ export function createModals({
       ["personality", "Personality"],
       ["service", "Service Tier"],
       ["memories", "Memories"],
+      ["secrets", "Secrets"],
       ["experimental", "Experimental"],
       ["mcp", "MCP"],
       ["skills", "Skills"],
@@ -1379,6 +1446,44 @@ export function createModals({
         <div id="memory-list" class="manager-list">${renderMemoryItems(memoriesData.items ?? [])}</div>
       `,
         tabForFocus !== "memories",
+      )}
+      ${panel(
+        "secrets",
+        `
+        <p class="settings-copy">Secrets are stored per named project in an encrypted file on disk and injected into the backend environment whenever that project workspace is active.</p>
+        ${
+          !secretsData.available
+            ? '<div class="manager-note">Activate a named project from the sidebar before managing secrets.</div>'
+            : ""
+        }
+        ${
+          secretsData.available && !secretsData.configured
+            ? '<div class="manager-note">Secret storage is disabled until <code>CODEX_WEB_SECRETS_KEY</code> is configured on the server.</div>'
+            : ""
+        }
+        ${
+          secretsData.error
+            ? `<div class="manager-note">${escapeHtml(secretsData.error)}</div>`
+            : ""
+        }
+        <div class="hook-grid">
+          <div class="modal-row">
+            <label>Secret key</label>
+            <input id="secret-key" placeholder="OPENAI_API_KEY" ${secretsData.available && secretsData.configured ? "" : "disabled"} />
+          </div>
+          <div class="modal-row">
+            <label>Secret value</label>
+            <input id="secret-value" type="password" placeholder="Paste a value to add or replace" ${secretsData.available && secretsData.configured ? "" : "disabled"} />
+          </div>
+        </div>
+        <div class="modal-actions modal-actions-left">
+          <button id="save-secret" class="primary" type="button" ${secretsData.available && secretsData.configured ? "" : "disabled"}>Save secret</button>
+          <button id="refresh-secrets" type="button" ${secretsData.available ? "" : "disabled"}>Refresh</button>
+        </div>
+        <div class="settings-copy">Saving the same key again replaces its value. Deleting a secret removes it and restarts the backend for this active project workspace.</div>
+        <div id="secrets-list" class="manager-list">${renderProjectSecrets(secretsData)}</div>
+      `,
+        tabForFocus !== "secrets",
       )}
       ${panel(
         "experimental",
@@ -1511,6 +1616,7 @@ export function createModals({
       (mount) => {
         let currentHooksState = hooksState;
         let currentMemoriesData = memoriesData;
+        let currentSecretsData = secretsData;
         const setTab = (tab) => {
           mount.querySelectorAll(".settings-tab").forEach((node) => {
             node.classList.toggle("active", node.dataset.tab === tab);
@@ -1521,6 +1627,7 @@ export function createModals({
         };
         const hooksEditor = mount.querySelector("#hooks-editor");
         const memoryList = mount.querySelector("#memory-list");
+        const secretsList = mount.querySelector("#secrets-list");
         const memoryModeSelect = mount.querySelector("#thread-memory-mode");
         const renderHooksEditor = () => {
           if (hooksEditor) hooksEditor.innerHTML = renderHookRows(currentHooksState.rows);
@@ -1528,6 +1635,11 @@ export function createModals({
         const renderMemoryList = () => {
           if (memoryList) {
             memoryList.innerHTML = renderMemoryItems(currentMemoriesData.items ?? []);
+          }
+        };
+        const renderSecretsList = () => {
+          if (secretsList) {
+            secretsList.innerHTML = renderProjectSecrets(currentSecretsData);
           }
         };
         mount.querySelectorAll(".settings-tab").forEach((node) => {
@@ -1626,6 +1738,91 @@ export function createModals({
               button.disabled = false;
             }
           });
+        mount
+          .querySelector("#refresh-secrets")
+          ?.addEventListener("click", async () => {
+            currentSecretsData = await loadProjectSecretsData();
+            renderSecretsList();
+            appendSystem("Project secrets refreshed.");
+          });
+        mount
+          .querySelector("#save-secret")
+          ?.addEventListener("click", async () => {
+            const keyInput = mount.querySelector("#secret-key");
+            const valueInput = mount.querySelector("#secret-value");
+            const key = keyInput?.value.trim() ?? "";
+            if (!key || !currentSecretsData.slug) return;
+            const button = mount.querySelector("#save-secret");
+            button.disabled = true;
+            try {
+              const response = await fetch(
+                `/api/projects/${encodeURIComponent(currentSecretsData.slug)}/secrets`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    key,
+                    value: valueInput?.value ?? "",
+                  }),
+                },
+              );
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(
+                  data.error ?? `secret save failed (${response.status})`,
+                );
+              }
+              currentSecretsData = {
+                ...currentSecretsData,
+                configured: true,
+                keys: data.keys ?? [],
+                error: null,
+              };
+              renderSecretsList();
+              if (keyInput) keyInput.value = "";
+              if (valueInput) valueInput.value = "";
+              appendSystem(`Saved secret ${key}.`);
+            } catch (error) {
+              appendSystem(`secret save failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+        secretsList?.addEventListener("click", async (event) => {
+          const button = event.target.closest("[data-action='delete-secret']");
+          if (!button || !currentSecretsData.slug) return;
+          const key = button.dataset.secretKey ?? "";
+          if (!key) return;
+          if (!confirm(`Delete secret "${key}"?`)) return;
+          button.disabled = true;
+          try {
+            const response = await fetch(
+              `/api/projects/${encodeURIComponent(currentSecretsData.slug)}/secrets`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ key, value: "" }),
+              },
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(
+                data.error ?? `secret delete failed (${response.status})`,
+              );
+            }
+            currentSecretsData = {
+              ...currentSecretsData,
+              keys: data.keys ?? [],
+              error: null,
+            };
+            renderSecretsList();
+            appendSystem(`Deleted secret ${key}.`);
+          } catch (error) {
+            appendSystem(`secret delete failed: ${error.message}`, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
         memoryList?.addEventListener("click", async (event) => {
           const button = event.target.closest("[data-action='preview-memory']");
           if (!button) return;

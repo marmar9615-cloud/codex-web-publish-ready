@@ -10,6 +10,8 @@ import { escapeHtml } from "./utils.js";
 import { createUploads, hydrateWorkdirMedia } from "./uploads.js";
 import { createRenderers } from "./renderers.js";
 import { createModals } from "./modals.js";
+import { createFileTree } from "./filetree.js";
+import { createTestRunner } from "./tests.js";
 import {
   createNotificationHandlers,
   isAuthErrorMessage,
@@ -55,6 +57,7 @@ function updateStatusBar() {
 const renderers = createRenderers({
   openThread: (threadId) => void openThread(threadId),
   onThreadAction: (action, thread) => handleThreadAction(action, thread),
+  onProjectAction: (action, project) => handleProjectAction(action, project),
   onRollbackToItem: (itemId) => rollbackToItem(itemId),
   onEditItem: (itemId) => void editAndResendItem(itemId),
   onForkFromItem: (itemId) => void forkFromItem(itemId),
@@ -104,6 +107,16 @@ const modals = createModals({
   clearAuthRequiredCard: renderers.clearAuthRequiredCard,
 });
 
+const fileTree = createFileTree({
+  rpcCall: rpc.rpcCall,
+  appendSystem: renderers.appendSystem,
+});
+
+const testRunner = createTestRunner({
+  rpcCall: rpc.rpcCall,
+  appendSystem: renderers.appendSystem,
+});
+
 notificationHandlers = createNotificationHandlers({
   rpcReply: rpc.rpcReply,
   rpcRaw: rpc.rpcRaw,
@@ -130,6 +143,7 @@ notificationHandlers = createNotificationHandlers({
   onThreadStarted,
   onTurnStarted,
   onTurnFinished,
+  onFsChanged: (params) => void fileTree.handleFsChanged(params),
   onStandaloneCommandDelta,
 });
 
@@ -157,9 +171,12 @@ const handleSlash = createCommandHandler({
 
 async function bootstrap() {
   await refreshWhoAmI();
+  await refreshProjects();
   await refreshThreads();
-  rpc.connectWs();
   bindUi();
+  fileTree.init();
+  testRunner.init();
+  rpc.connectWs();
   updateStatusBar();
   uploads.renderPendingUploads();
 }
@@ -170,6 +187,29 @@ async function refreshWhoAmI() {
   renderers.renderAccount();
   renderers.renderAccountPill();
   updateStatusBar();
+  if (state.initialized) {
+    await fileTree.refresh().catch((error) => {
+      console.warn("workspace refresh failed", error.message);
+    });
+    await testRunner.refresh().catch((error) => {
+      console.warn("test runner refresh failed", error.message);
+    });
+  }
+}
+
+async function refreshProjects() {
+  try {
+    const response = await fetch("/api/projects");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error ?? `project list failed (${response.status})`);
+    }
+    state.projects = data.projects ?? [];
+  } catch (error) {
+    console.warn("project list failed", error.message);
+    state.projects = [];
+  }
+  renderers.renderProjects();
 }
 
 async function refreshThreads() {
@@ -520,6 +560,7 @@ function onStandaloneCommandDelta(params) {
   existing.stream = params.stream ?? "stdout";
   existing.capReached = params.capReached ?? false;
   state.commandSessions.set(processId, existing);
+  testRunner.handleOutputDelta(params);
 }
 
 async function rollbackTurns(numTurns) {
@@ -692,6 +733,9 @@ function bindUi() {
   $("#new-thread").addEventListener("click", newThread);
   $("#account-btn").addEventListener("click", onAccountClick);
   $("#settings-btn").addEventListener("click", () => modals.openSettings());
+  $("#new-project-btn")?.addEventListener("click", () => {
+    void createProject();
+  });
   $("#attach-btn")?.addEventListener("click", () =>
     $("#attach-input")?.click(),
   );
@@ -716,6 +760,86 @@ function bindUi() {
   input.addEventListener("keydown", onKeyDown);
   input.addEventListener("paste", uploads.onComposerPaste);
   autoGrow(input);
+}
+
+async function createProject() {
+  const name = prompt("Project name:");
+  if (!name) return;
+  try {
+    const response = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error ?? `project create failed (${response.status})`);
+    }
+    await refreshProjects();
+    renderers.appendSystem(`Created project ${data.project?.name ?? name}.`);
+  } catch (error) {
+    renderers.appendSystem(`project create failed: ${error.message}`, "error");
+  }
+}
+
+async function activateProject(project) {
+  if (!project?.slug) return;
+  try {
+    const response = await fetch(
+      `/api/projects/${encodeURIComponent(project.slug)}/activate`,
+      {
+        method: "POST",
+      },
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error ?? `project activate failed (${response.status})`);
+    }
+    await refreshWhoAmI();
+    await refreshProjects();
+    newThread();
+    renderers.appendSystem(
+      `Workspace switched to ${data.project?.name ?? project.name ?? project.slug}.`,
+    );
+  } catch (error) {
+    renderers.appendSystem(`project activate failed: ${error.message}`, "error");
+  }
+}
+
+async function deleteProject(project) {
+  const label = project?.name ?? project?.slug ?? "project";
+  if (!project?.slug) return;
+  if (!confirm(`Delete project "${label}"?`)) return;
+  try {
+    const response = await fetch(
+      `/api/projects/${encodeURIComponent(project.slug)}`,
+      {
+        method: "DELETE",
+      },
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error ?? `project delete failed (${response.status})`);
+    }
+    await refreshWhoAmI();
+    await refreshProjects();
+    renderers.appendSystem(`Deleted project ${label}.`);
+  } catch (error) {
+    renderers.appendSystem(`project delete failed: ${error.message}`, "error");
+  }
+}
+
+async function handleProjectAction(action, project) {
+  switch (action) {
+    case "activate":
+      await activateProject(project);
+      return;
+    case "delete":
+      await deleteProject(project);
+      return;
+    default:
+      return;
+  }
 }
 
 async function onInput(event) {

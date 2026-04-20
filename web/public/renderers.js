@@ -10,6 +10,7 @@ export function patchKind(kind) {
 export function createRenderers({
   openThread,
   onThreadAction,
+  onProjectAction,
   onRollbackToItem,
   onEditItem,
   onForkFromItem,
@@ -48,6 +49,50 @@ export function createRenderers({
     }
     if (whoami.oauthError)
       status.textContent = `Sign-in failed: ${whoami.oauthError}`;
+  }
+
+  function renderProjects() {
+    const host = $("#projects");
+    if (!host) return;
+    host.innerHTML = "";
+    if (!state.projects.length) {
+      host.innerHTML =
+        '<div class="muted thread-empty">Create a named project to keep a persistent workspace handy.</div>';
+      return;
+    }
+    for (const project of state.projects) {
+      const row = el("div", {
+        class: `project-item${project.active ? " active" : ""}`,
+      });
+      const main = el("button", { class: "project-main", type: "button" });
+      main.innerHTML = `
+        <div class="project-name">${escapeHtml(project.name ?? project.slug ?? "Project")}</div>
+        <div class="project-meta">${escapeHtml(project.system ? "session workspace" : (project.slug ?? ""))}</div>
+      `;
+      main.addEventListener("click", () => {
+        if (!onProjectAction) return;
+        void onProjectAction("activate", project);
+      });
+      row.appendChild(main);
+      if (!project.system) {
+        const actions = el("div", { class: "project-actions" });
+        const deleteButton = el("button", {
+          class: "project-delete ghost",
+          type: "button",
+          title: `Delete ${project.name ?? project.slug ?? "project"}`,
+          "aria-label": `Delete ${project.name ?? project.slug ?? "project"}`,
+        });
+        deleteButton.textContent = "×";
+        deleteButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (!onProjectAction) return;
+          void onProjectAction("delete", project);
+        });
+        actions.appendChild(deleteButton);
+        row.appendChild(actions);
+      }
+      host.appendChild(row);
+    }
   }
 
   function renderThreads() {
@@ -765,6 +810,7 @@ export function createRenderers({
     renderAccount,
     renderAccountPill,
     renderApproval,
+    renderProjects,
     renderRatePill,
     renderThreads,
     renderTokenPill,

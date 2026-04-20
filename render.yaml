@@ -21,3 +21,5 @@ services:
         value: /var/data/workdirs
       - key: CODEX_WEB_FILE_SIGNING_SECRET
         generateValue: true
+      - key: CODEX_WEB_SECRETS_KEY
+        generateValue: true

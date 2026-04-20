@@ -10,6 +10,9 @@ import { WebSocketServer } from "ws";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
   createHmac,
   randomBytes,
   randomUUID,
@@ -17,7 +20,13 @@ import {
 } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { readdir } from "node:fs/promises";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -28,8 +37,13 @@ const PUBLIC_DIR = join(__dirname, "public");
 const WORKDIR_ROOT = resolve(
   process.env.CODEX_WEB_WORKDIR_ROOT ?? join(__dirname, ".workdirs"),
 );
+const PROJECTS_ROOT = resolve(
+  process.env.CODEX_WEB_PROJECTS_ROOT ?? join(dirname(WORKDIR_ROOT), "projects"),
+);
 const CODEX_BIN = process.env.CODEX_BIN ?? "";
 const IS_PROD = process.env.NODE_ENV === "production";
+const PROJECT_METADATA_FILE = ".codex-project.json";
+const PROJECT_SECRETS_FILE = ".codex-secrets.enc";
 
 const CHATGPT_ISSUER = (
   process.env.CODEX_CHATGPT_ISSUER ?? "https://auth.openai.com"
@@ -40,6 +54,7 @@ const CHATGPT_ACCOUNTS_API = `${CHATGPT_ISSUER}/api/accounts`;
 const CHATGPT_DEVICE_REDIRECT_URI = `${CHATGPT_ISSUER}/deviceauth/callback`;
 
 mkdirSync(WORKDIR_ROOT, { recursive: true });
+mkdirSync(PROJECTS_ROOT, { recursive: true });
 
 // -------- session store (in-memory) --------
 // session: {
@@ -73,17 +88,23 @@ function touchSession(s) {
   if (s) s.lastSeenAt = Date.now();
 }
 
-function makeSession(id) {
-  const workdir = join(WORKDIR_ROOT, id);
+function ensureWorkdirScaffold(workdir) {
   mkdirSync(workdir, { recursive: true });
   mkdirSync(join(workdir, ".uploads"), { recursive: true });
+}
+
+function makeSession(id) {
+  const workdir = join(WORKDIR_ROOT, id);
+  ensureWorkdirScaffold(workdir);
   return {
     id,
     apiKey: undefined,
     oauth: undefined,
     createdAt: Date.now(),
     lastSeenAt: Date.now(),
+    defaultWorkdir: workdir,
     workdir,
+    activeProjectSlug: null,
     threads: new Map(),
     activeThreadId: undefined,
     backend: null,
@@ -472,6 +493,7 @@ app.use(express.static(PUBLIC_DIR));
 
 app.get("/api/whoami", (req, res) => {
   const session = getOrCreateSession(req, res);
+  const activeProject = activeProjectSummary(session);
   const hasOauth = Boolean(
     session.oauth?.accessToken ||
     session.oauth?.authMode === "chatgpt" ||
@@ -495,9 +517,138 @@ app.get("/api/whoami", (req, res) => {
       : session.apiKey
         ? "apikey"
         : null,
+    activeProjectSlug: activeProject?.slug ?? null,
+    activeProjectName: activeProject?.name ?? null,
     backend: backendState(),
     realBinaryConfigured: hasRealBackendConfigured(),
     workdir: session.workdir,
+  });
+});
+
+app.get("/api/projects", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  res.json({ projects: await listProjectsForSession(session) });
+});
+
+app.post("/api/projects", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const name = String(req.body?.name ?? "").trim();
+  const slug = normalizeProjectSlug(req.body?.slug ?? name);
+  if (!name) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+  if (!slug || slug === "_scratch") {
+    res.status(400).json({ error: "valid slug is required" });
+    return;
+  }
+  const dir = projectDirForSlug(slug);
+  if (existsSync(dir)) {
+    res.status(409).json({ error: "project already exists" });
+    return;
+  }
+  ensureWorkdirScaffold(dir);
+  const now = Date.now();
+  const project = {
+    slug,
+    name,
+    createdAt: now,
+    updatedAt: now,
+  };
+  writeProjectMetadata(dir, project);
+  res.status(201).json({
+    project: serializeProject(session, project, dir),
+  });
+});
+
+app.post("/api/projects/:slug/activate", sameOriginOnly, (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const project = activateProjectForSession(session, slug);
+  if (!project) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  res.json({
+    ok: true,
+    project,
+    workdir: session.workdir,
+  });
+});
+
+app.delete("/api/projects/:slug", sameOriginOnly, (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  if (!slug || slug === "_scratch") {
+    res.status(400).json({ error: "cannot delete scratch workspace" });
+    return;
+  }
+  const dir = projectDirForSlug(slug);
+  if (!existsSync(dir)) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  if (session.activeProjectSlug === slug) {
+    activateProjectForSession(session, "_scratch");
+  }
+  rmSync(dir, { recursive: true, force: true });
+  res.json({ ok: true });
+});
+
+app.get("/api/projects/:slug/secrets", sameOriginOnly, (req, res) => {
+  const slug = String(req.params.slug ?? "");
+  if (!slug || slug === "_scratch") {
+    res.status(400).json({ error: "named project required" });
+    return;
+  }
+  const dir = projectDirForSlug(slug);
+  if (!existsSync(dir)) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  const configured = Boolean(getProjectSecretsCipherKey());
+  const secrets = configured ? readProjectSecrets(slug) : {};
+  res.json({
+    configured,
+    keys: Object.keys(secrets).sort((left, right) => left.localeCompare(right)),
+  });
+});
+
+app.post("/api/projects/:slug/secrets", sameOriginOnly, (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const slug = String(req.params.slug ?? "");
+  const key = String(req.body?.key ?? "").trim();
+  const value = req.body?.value;
+  if (!slug || slug === "_scratch") {
+    res.status(400).json({ error: "named project required" });
+    return;
+  }
+  if (!key) {
+    res.status(400).json({ error: "secret key is required" });
+    return;
+  }
+  if (!getProjectSecretsCipherKey()) {
+    res.status(503).json({ error: "CODEX_WEB_SECRETS_KEY is not configured" });
+    return;
+  }
+  const dir = projectDirForSlug(slug);
+  if (!existsSync(dir)) {
+    res.status(404).json({ error: "project not found" });
+    return;
+  }
+  const secrets = readProjectSecrets(slug);
+  if (value == null || value === "") {
+    delete secrets[key];
+  } else {
+    secrets[key] = String(value);
+  }
+  writeProjectSecrets(slug, secrets);
+  if (session.activeProjectSlug === slug) {
+    killBackend(session, `project secret updated:${slug}`);
+  }
+  res.json({
+    ok: true,
+    keys: Object.keys(secrets).sort((left, right) => left.localeCompare(right)),
   });
 });
 
@@ -686,6 +837,186 @@ async function searchWorkdir(root, query) {
   return results;
 }
 
+function normalizeProjectSlug(value) {
+  const slug = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return slug || null;
+}
+
+function projectDirForSlug(slug) {
+  return join(PROJECTS_ROOT, slug);
+}
+
+function projectMetadataPath(dir) {
+  return join(dir, PROJECT_METADATA_FILE);
+}
+
+function readProjectMetadata(dir, slug) {
+  const fallback = {
+    slug,
+    name: slug,
+    createdAt: null,
+    updatedAt: null,
+  };
+  try {
+    const raw = readFileSync(projectMetadataPath(dir), "utf8");
+    return {
+      ...fallback,
+      ...JSON.parse(raw),
+      slug,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeProjectMetadata(dir, project) {
+  writeFileSync(
+    projectMetadataPath(dir),
+    `${JSON.stringify(project, null, 2)}\n`,
+  );
+}
+
+function serializeProject(session, project, dir, options = {}) {
+  return {
+    slug: project.slug,
+    name: project.name,
+    path: dir,
+    active: session.activeProjectSlug === project.slug,
+    system: Boolean(options.system),
+    createdAt: project.createdAt ?? null,
+    updatedAt: project.updatedAt ?? null,
+  };
+}
+
+async function listProjectsForSession(session) {
+  const entries = await readdir(PROJECTS_ROOT, { withFileTypes: true }).catch(
+    () => [],
+  );
+  const projects = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const dir = projectDirForSlug(entry.name);
+      const project = readProjectMetadata(dir, entry.name);
+      return serializeProject(session, project, dir);
+    })
+    .sort((left, right) =>
+      String(left.name ?? left.slug).localeCompare(String(right.name ?? right.slug)),
+    );
+  return [
+    {
+      slug: "_scratch",
+      name: "Scratch workspace",
+      path: session.defaultWorkdir,
+      active: !session.activeProjectSlug,
+      system: true,
+      createdAt: null,
+      updatedAt: null,
+    },
+    ...projects,
+  ];
+}
+
+function activeProjectSummary(session) {
+  if (!session.activeProjectSlug) return null;
+  const dir = projectDirForSlug(session.activeProjectSlug);
+  if (!existsSync(dir)) return null;
+  return serializeProject(
+    session,
+    readProjectMetadata(dir, session.activeProjectSlug),
+    dir,
+  );
+}
+
+function activateProjectForSession(session, slug) {
+  if (!slug || slug === "_scratch") {
+    session.activeProjectSlug = null;
+    session.activeThreadId = undefined;
+    session.workdir = session.defaultWorkdir;
+    ensureWorkdirScaffold(session.workdir);
+    killBackend(session, "workspace switched");
+    return {
+      slug: "_scratch",
+      name: "Scratch workspace",
+      path: session.workdir,
+      active: true,
+      system: true,
+      createdAt: null,
+      updatedAt: null,
+    };
+  }
+  const dir = projectDirForSlug(slug);
+  if (!existsSync(dir)) return null;
+  const project = readProjectMetadata(dir, slug);
+  session.activeProjectSlug = slug;
+  session.activeThreadId = undefined;
+  session.workdir = dir;
+  ensureWorkdirScaffold(session.workdir);
+  killBackend(session, `workspace switched:${slug}`);
+  return serializeProject(session, project, dir);
+}
+
+function projectSecretsPath(slug) {
+  return join(projectDirForSlug(slug), PROJECT_SECRETS_FILE);
+}
+
+function getProjectSecretsCipherKey() {
+  const secret = process.env.CODEX_WEB_SECRETS_KEY ?? "";
+  if (!secret) return null;
+  return createHash("sha256").update(secret).digest();
+}
+
+function readProjectSecrets(slug) {
+  if (!slug) return {};
+  const cipherKey = getProjectSecretsCipherKey();
+  if (!cipherKey) return {};
+  const filePath = projectSecretsPath(slug);
+  if (!existsSync(filePath)) return {};
+  try {
+    const payload = JSON.parse(readFileSync(filePath, "utf8"));
+    const iv = Buffer.from(payload.iv ?? "", "base64");
+    const ciphertext = Buffer.from(payload.ciphertext ?? "", "base64");
+    const tag = Buffer.from(payload.tag ?? "", "base64");
+    const decipher = createDecipheriv("aes-256-gcm", cipherKey, iv);
+    decipher.setAuthTag(tag);
+    const plaintext = Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]).toString("utf8");
+    const parsed = JSON.parse(plaintext);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    console.warn("[codex-web] failed to read project secrets:", error.message);
+    return {};
+  }
+}
+
+function writeProjectSecrets(slug, secrets) {
+  const cipherKey = getProjectSecretsCipherKey();
+  if (!cipherKey) {
+    throw new Error("CODEX_WEB_SECRETS_KEY is not configured");
+  }
+  const dir = projectDirForSlug(slug);
+  ensureWorkdirScaffold(dir);
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", cipherKey, iv);
+  const plaintext = Buffer.from(JSON.stringify(secrets), "utf8");
+  const ciphertext = Buffer.concat([
+    cipher.update(plaintext),
+    cipher.final(),
+  ]);
+  const payload = {
+    iv: iv.toString("base64"),
+    ciphertext: ciphertext.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+  };
+  writeFileSync(projectSecretsPath(slug), `${JSON.stringify(payload, null, 2)}\n`);
+}
+
 function findProjectRoot(startDir) {
   let cursor = startDir;
   while (cursor && cursor !== dirname(cursor)) {
@@ -777,7 +1108,11 @@ function ensureBackend(session) {
 
   const codexHome = join(session.workdir, ".codex");
   mkdirSync(codexHome, { recursive: true });
-  const env = { ...process.env, CODEX_HOME: codexHome };
+  const env = {
+    ...process.env,
+    ...readProjectSecrets(session.activeProjectSlug),
+    CODEX_HOME: codexHome,
+  };
 
   let child;
   try {
