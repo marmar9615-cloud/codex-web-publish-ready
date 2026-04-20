@@ -1441,6 +1441,89 @@ app.post(
 );
 
 app.get(
+  "/api/projects/:slug/deploy/cloudflare",
+  sameOriginOnly,
+  async (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    try {
+      res.json(await loadCloudflareDeployState(slug));
+    } catch (error) {
+      res.status(502).json({ error: error.message });
+    }
+  },
+);
+
+app.post(
+  "/api/projects/:slug/deploy/cloudflare/config",
+  sameOriginOnly,
+  async (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    if (!getProjectSecretsCipherKey()) {
+      res.status(503).json({ error: "CODEX_WEB_SECRETS_KEY is not configured" });
+      return;
+    }
+    const secrets = readProjectSecrets(slug);
+    const setOrDelete = (key, value) => {
+      const trimmed = typeof value === "string" ? value.trim() : "";
+      if (trimmed) {
+        secrets[key] = trimmed;
+      } else if (value === "" || value === null) {
+        delete secrets[key];
+      }
+    };
+    if ("deployHookUrl" in (req.body ?? {})) {
+      setOrDelete("CLOUDFLARE_PAGES_DEPLOY_HOOK_URL", req.body.deployHookUrl);
+    }
+    if ("token" in (req.body ?? {})) {
+      setOrDelete("CLOUDFLARE_API_TOKEN", req.body.token);
+    }
+    if ("accountId" in (req.body ?? {})) {
+      setOrDelete("CLOUDFLARE_ACCOUNT_ID", req.body.accountId);
+    }
+    if ("projectName" in (req.body ?? {})) {
+      setOrDelete("CLOUDFLARE_PAGES_PROJECT_NAME", req.body.projectName);
+    }
+    writeProjectSecrets(slug, secrets);
+    try {
+      res.json({ ok: true, deploy: await loadCloudflareDeployState(slug) });
+    } catch (error) {
+      res.status(502).json({ error: error.message });
+    }
+  },
+);
+
+app.post(
+  "/api/projects/:slug/deploy/cloudflare/trigger",
+  sameOriginOnly,
+  async (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    try {
+      res.json({ ok: true, deploy: await triggerCloudflareDeploy(slug) });
+    } catch (error) {
+      res.status(502).json({ error: error.message });
+    }
+  },
+);
+
+app.get(
   "/api/projects/:slug/logs/render",
   sameOriginOnly,
   async (req, res) => {
@@ -2620,6 +2703,38 @@ function getNetlifySiteId(slug) {
   );
 }
 
+function getCloudflareDeployHookUrl(slug) {
+  return (
+    getProjectSecretValue(slug, "CLOUDFLARE_PAGES_DEPLOY_HOOK_URL") ??
+    process.env.CODEX_WEB_CLOUDFLARE_PAGES_DEPLOY_HOOK_URL ??
+    null
+  );
+}
+
+function getCloudflareToken(slug) {
+  return (
+    getProjectSecretValue(slug, "CLOUDFLARE_API_TOKEN") ??
+    process.env.CODEX_WEB_CLOUDFLARE_API_TOKEN ??
+    null
+  );
+}
+
+function getCloudflareAccountId(slug) {
+  return (
+    getProjectSecretValue(slug, "CLOUDFLARE_ACCOUNT_ID") ??
+    process.env.CODEX_WEB_CLOUDFLARE_ACCOUNT_ID ??
+    null
+  );
+}
+
+function getCloudflarePagesProjectName(slug) {
+  return (
+    getProjectSecretValue(slug, "CLOUDFLARE_PAGES_PROJECT_NAME") ??
+    process.env.CODEX_WEB_CLOUDFLARE_PAGES_PROJECT_NAME ??
+    null
+  );
+}
+
 function redactHookUrl(url) {
   if (!url) return null;
   try {
@@ -3149,6 +3264,106 @@ async function triggerNetlifyDeploy(slug) {
     status: response.status,
     responseText: truncateOutput(text, 1500),
     deploy: project.deploy?.netlify ?? null,
+  };
+}
+
+async function loadCloudflareDeployState(slug) {
+  const project = readProjectMetadata(projectDirForSlug(slug), slug);
+  const lastDeploy = project.deploy?.cloudflare ?? {};
+  const hookUrl = getCloudflareDeployHookUrl(slug);
+  const token = getCloudflareToken(slug);
+  const accountId = getCloudflareAccountId(slug);
+  const projectName = getCloudflarePagesProjectName(slug);
+  let recent = null;
+  let recentError = null;
+  if (token && accountId && projectName) {
+    try {
+      const response = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/pages/projects/${encodeURIComponent(projectName)}/deployments?per_page=5`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) {
+        recentError = `Cloudflare API returned ${response.status}: ${truncateOutput(text, 300)}`;
+      } else {
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { result: [] };
+        }
+        const list = Array.isArray(data?.result) ? data.result : [];
+        recent = list.slice(0, 5).map((d) => {
+          const latestStage = d.latest_stage ?? {};
+          const envName =
+            d.environment === "production" ? "production" : d.environment ?? "preview";
+          return {
+            uid: d.id ?? null,
+            url: d.url ?? null,
+            state: latestStage.status ?? d.deployment_trigger?.status ?? null,
+            stage: latestStage.name ?? null,
+            createdAt: d.created_on ?? null,
+            target: envName,
+            branch: d.deployment_trigger?.metadata?.branch ?? null,
+            commitMessage:
+              d.deployment_trigger?.metadata?.commit_message ??
+              d.deployment_trigger?.metadata?.commit_hash ??
+              null,
+          };
+        });
+      }
+    } catch (error) {
+      recentError = error.message;
+    }
+  }
+  return {
+    configured: Boolean(hookUrl),
+    hookLabel: redactHookUrl(hookUrl),
+    hasToken: Boolean(token),
+    hasAccountId: Boolean(accountId),
+    hasProjectName: Boolean(projectName),
+    recent,
+    recentError,
+    lastDeploy: {
+      lastTriggeredAt: lastDeploy.lastTriggeredAt ?? null,
+      lastStatus: lastDeploy.lastStatus ?? null,
+      lastOk: lastDeploy.lastOk ?? null,
+      lastResponseText: lastDeploy.lastResponseText ?? null,
+    },
+  };
+}
+
+async function triggerCloudflareDeploy(slug) {
+  const hookUrl = getCloudflareDeployHookUrl(slug);
+  if (!hookUrl) {
+    throw new Error(
+      "Configure CLOUDFLARE_PAGES_DEPLOY_HOOK_URL in project secrets first.",
+    );
+  }
+  const response = await fetch(hookUrl, { method: "POST" });
+  const text = await response.text();
+  const project = updateProjectMetadata(slug, (current) => ({
+    ...current,
+    deploy: {
+      ...(current.deploy ?? {}),
+      cloudflare: {
+        lastTriggeredAt: Date.now(),
+        lastStatus: response.status,
+        lastOk: response.ok,
+        lastResponseText: truncateOutput(text, 1500),
+      },
+    },
+  }));
+  return {
+    ok: response.ok,
+    status: response.status,
+    responseText: truncateOutput(text, 1500),
+    deploy: project.deploy?.cloudflare ?? null,
   };
 }
 

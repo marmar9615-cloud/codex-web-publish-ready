@@ -479,6 +479,17 @@ export function createModals({
       lastDeploy: null,
       error: null,
     };
+    const emptyCloudflare = {
+      configured: false,
+      hookLabel: null,
+      hasToken: false,
+      hasAccountId: false,
+      hasProjectName: false,
+      recent: null,
+      recentError: null,
+      lastDeploy: null,
+      error: null,
+    };
     if (!slug) {
       return {
         available: false,
@@ -486,9 +497,10 @@ export function createModals({
         render: emptyRender,
         vercel: emptyVercel,
         netlify: emptyNetlify,
+        cloudflare: emptyCloudflare,
       };
     }
-    const [renderData, vercelData, netlifyData] = await Promise.all([
+    const [renderData, vercelData, netlifyData, cloudflareData] = await Promise.all([
       fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/render`)
         .then((data) => ({
           configured: Boolean(data.configured),
@@ -522,6 +534,19 @@ export function createModals({
           error: null,
         }))
         .catch((error) => ({ ...emptyNetlify, error: error.message })),
+      fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/cloudflare`)
+        .then((data) => ({
+          configured: Boolean(data.configured),
+          hookLabel: data.hookLabel ?? null,
+          hasToken: Boolean(data.hasToken),
+          hasAccountId: Boolean(data.hasAccountId),
+          hasProjectName: Boolean(data.hasProjectName),
+          recent: Array.isArray(data.recent) ? data.recent : null,
+          recentError: data.recentError ?? null,
+          lastDeploy: data.lastDeploy ?? null,
+          error: null,
+        }))
+        .catch((error) => ({ ...emptyCloudflare, error: error.message })),
     ]);
     return {
       available: true,
@@ -529,6 +554,7 @@ export function createModals({
       render: renderData,
       vercel: vercelData,
       netlify: netlifyData,
+      cloudflare: cloudflareData,
     };
   }
 
@@ -744,6 +770,7 @@ export function createModals({
     const render = deployData.render ?? {};
     const vercel = deployData.vercel ?? {};
     const netlify = deployData.netlify ?? {};
+    const cloudflare = deployData.cloudflare ?? {};
     const renderLast = render.lastDeploy ?? {};
     const renderLastTime = renderLast.lastTriggeredAt
       ? new Date(renderLast.lastTriggeredAt).toLocaleString()
@@ -756,6 +783,10 @@ export function createModals({
     const netlifyLastTime = netlifyLast.lastTriggeredAt
       ? new Date(netlifyLast.lastTriggeredAt).toLocaleString()
       : "Never";
+    const cloudflareLast = cloudflare.lastDeploy ?? {};
+    const cloudflareLastTime = cloudflareLast.lastTriggeredAt
+      ? new Date(cloudflareLast.lastTriggeredAt).toLocaleString()
+      : "Never";
     const renderError = render.error
       ? `<div class="manager-note manager-note-error">Render panel: ${escapeHtml(render.error)}</div>`
       : "";
@@ -765,10 +796,14 @@ export function createModals({
     const netlifyError = netlify.error
       ? `<div class="manager-note manager-note-error">Netlify panel: ${escapeHtml(netlify.error)}</div>`
       : "";
+    const cloudflareError = cloudflare.error
+      ? `<div class="manager-note manager-note-error">Cloudflare panel: ${escapeHtml(cloudflare.error)}</div>`
+      : "";
     return `
       ${renderError}
       ${vercelError}
       ${netlifyError}
+      ${cloudflareError}
 
       <section class="deploy-provider">
         <header class="deploy-provider-head">
@@ -891,8 +926,125 @@ export function createModals({
         ${renderNetlifyRecent(netlify)}
       </section>
 
+      <section class="deploy-provider">
+        <header class="deploy-provider-head">
+          <h3>Cloudflare Pages</h3>
+          <div class="manager-meta">${cloudflare.configured ? escapeHtml(cloudflare.hookLabel ?? "configured") : "not configured"}</div>
+        </header>
+        <p class="settings-copy">Triggers a Cloudflare Pages deploy hook. Optionally add <code>CLOUDFLARE_API_TOKEN</code> + <code>CLOUDFLARE_ACCOUNT_ID</code> + <code>CLOUDFLARE_PAGES_PROJECT_NAME</code> to show recent deployment status.</p>
+        <div class="modal-row">
+          <label>Deploy hook URL</label>
+          <input id="cf-hook-url" placeholder="https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/..." />
+        </div>
+        <div class="modal-row modal-row-split">
+          <div>
+            <label>API token (optional)</label>
+            <input id="cf-token" type="password" placeholder="cf_…" autocomplete="off" ${cloudflare.hasToken ? 'data-has="true"' : ""} />
+            ${cloudflare.hasToken ? '<div class="manager-meta">Saved. Leave blank to keep; enter a new value to rotate.</div>' : ""}
+          </div>
+          <div>
+            <label>Account ID</label>
+            <input id="cf-account-id" placeholder="abcdef…" ${cloudflare.hasAccountId ? 'data-has="true"' : ""} />
+            ${cloudflare.hasAccountId ? '<div class="manager-meta">Saved.</div>' : ""}
+          </div>
+        </div>
+        <div class="modal-row">
+          <label>Pages project name</label>
+          <input id="cf-project-name" placeholder="my-app" ${cloudflare.hasProjectName ? 'data-has="true"' : ""} />
+          ${cloudflare.hasProjectName ? '<div class="manager-meta">Saved.</div>' : ""}
+        </div>
+        <div class="modal-actions modal-actions-left">
+          <button id="cf-save" type="button">Save config</button>
+          <button id="cf-refresh" type="button">Refresh</button>
+          <button id="cf-trigger" type="button" class="primary" ${cloudflare.configured ? "" : "disabled"}>Trigger deploy</button>
+        </div>
+        <div class="manager-card">
+          <div class="manager-card-head">
+            <div>
+              <h4>Last trigger</h4>
+              <div class="manager-meta">${escapeHtml(cloudflareLastTime)}${cloudflareLast.lastStatus ? ` · status ${cloudflareLast.lastStatus}` : ""}</div>
+            </div>
+          </div>
+          ${
+            cloudflareLast.lastResponseText
+              ? `<pre>${escapeHtml(cloudflareLast.lastResponseText)}</pre>`
+              : '<div class="manager-blurb">No deploys triggered from this project yet.</div>'
+          }
+        </div>
+        ${renderCloudflareRecent(cloudflare)}
+      </section>
+
       <div id="project-deploy-feedback" class="manager-note" hidden></div>
     `;
+  }
+
+  function renderCloudflareRecent(cloudflare) {
+    if (cloudflare.recentError) {
+      return `<div class="manager-note manager-note-error">Recent deployments: ${escapeHtml(cloudflare.recentError)}</div>`;
+    }
+    if (!cloudflare.recent) {
+      return "";
+    }
+    if (!cloudflare.recent.length) {
+      return '<div class="manager-blurb">No recent Cloudflare Pages deployments for this project name.</div>';
+    }
+    return `
+      <div class="manager-list vercel-recent">
+        ${cloudflare.recent
+          .map((deploy) => {
+            const ts = deploy.createdAt
+              ? new Date(deploy.createdAt).toLocaleString()
+              : "";
+            const stateClass = mapCloudflareState((deploy.state ?? "").toLowerCase());
+            const stageLabel = deploy.stage ? ` · ${escapeHtml(deploy.stage)}` : "";
+            return `
+              <article class="manager-card vercel-deploy vercel-state-${escapeHtml(stateClass)}">
+                <div class="manager-card-head">
+                  <div>
+                    <h4>${escapeHtml(deploy.target ?? "preview")} · ${escapeHtml(deploy.branch ?? "—")}</h4>
+                    <div class="manager-meta">${escapeHtml(ts)}${deploy.state ? ` · ${escapeHtml(deploy.state)}${stageLabel}` : ""}</div>
+                  </div>
+                  ${
+                    deploy.url
+                      ? `<a class="button-link" target="_blank" rel="noopener" href="${escapeHtml(deploy.url)}">Open</a>`
+                      : ""
+                  }
+                </div>
+                ${
+                  deploy.commitMessage
+                    ? `<div class="manager-blurb">${escapeHtml(deploy.commitMessage)}</div>`
+                    : ""
+                }
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  function mapCloudflareState(state) {
+    switch (state) {
+      case "success":
+        return "ready";
+      case "active":
+      case "building":
+      case "running":
+      case "initializing":
+      case "queued":
+        return "building";
+      case "idle":
+      case "pending":
+        return "queued";
+      case "failure":
+      case "error":
+        return "error";
+      case "canceled":
+      case "cancelled":
+        return "canceled";
+      default:
+        return "unknown";
+    }
   }
 
   function renderNetlifyRecent(netlify) {
@@ -1585,6 +1737,72 @@ export function createModals({
             } catch (error) {
               setFeedback("#project-deploy-feedback", error.message, "error");
               appendSystem(`netlify deploy failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+
+          mount.querySelector("#cf-refresh")?.addEventListener("click", () => {
+            void refreshDeploy();
+          });
+          mount.querySelector("#cf-save")?.addEventListener("click", async () => {
+            const slug = currentDeployData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#cf-save");
+            button.disabled = true;
+            try {
+              const payload = {
+                deployHookUrl:
+                  mount.querySelector("#cf-hook-url")?.value.trim() ?? "",
+              };
+              const tokenInput = mount.querySelector("#cf-token");
+              if (tokenInput && tokenInput.value !== "") {
+                payload.token = tokenInput.value;
+              }
+              const accountIdInput = mount.querySelector("#cf-account-id");
+              if (accountIdInput && accountIdInput.value !== "") {
+                payload.accountId = accountIdInput.value;
+              }
+              const projectNameInput = mount.querySelector("#cf-project-name");
+              if (projectNameInput && projectNameInput.value !== "") {
+                payload.projectName = projectNameInput.value;
+              }
+              await fetchProjectJson(
+                `/api/projects/${encodeURIComponent(slug)}/deploy/cloudflare/config`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload),
+                },
+              );
+              setFeedback("#project-deploy-feedback", "Cloudflare config saved.");
+              await refreshDeploy();
+            } catch (error) {
+              setFeedback("#project-deploy-feedback", error.message, "error");
+              appendSystem(`cloudflare config save failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
+          mount.querySelector("#cf-trigger")?.addEventListener("click", async () => {
+            const slug = currentDeployData.slug;
+            if (!slug) return;
+            const button = mount.querySelector("#cf-trigger");
+            button.disabled = true;
+            try {
+              const data = await fetchProjectJson(
+                `/api/projects/${encodeURIComponent(slug)}/deploy/cloudflare/trigger`,
+                { method: "POST" },
+              );
+              setFeedback(
+                "#project-deploy-feedback",
+                data.deploy?.responseText ?? "Cloudflare deploy triggered.",
+              );
+              showToast("Cloudflare deploy hook triggered.", "success");
+              await refreshDeploy();
+            } catch (error) {
+              setFeedback("#project-deploy-feedback", error.message, "error");
+              appendSystem(`cloudflare deploy failed: ${error.message}`, "error");
             } finally {
               button.disabled = false;
             }
