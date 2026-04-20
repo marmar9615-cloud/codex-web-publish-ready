@@ -257,15 +257,39 @@ export function createRenderers({
 
   function renderReasoning(item) {
     const cell = el("div", { class: "cell assistant" });
-    const reasoning = el("div", { class: "reasoning" });
     const parts = [
       ...(item.summary ?? []),
       ...(item.content ?? []),
       ...(item.text ? [item.text] : []),
     ].filter(Boolean);
-    reasoning.textContent = parts.join("\n\n");
-    cell.appendChild(reasoning);
+    const body = parts.join("\n\n");
+    const effort = item.reasoningEffort || state.settings?.modelReasoningEffort || "";
+    const details = el("details", { class: "reasoning", open: "" });
+    const summary = el("summary", { class: "reasoning-summary" });
+    const label = el("span", { class: "reasoning-label" });
+    label.textContent = "Thinking";
+    summary.appendChild(label);
+    if (effort) {
+      const badge = el("span", { class: `reasoning-effort effort-${effort}` });
+      badge.textContent = effort;
+      summary.appendChild(badge);
+    }
+    const preview = el("span", { class: "reasoning-preview" });
+    preview.textContent = firstLine(body, 80);
+    summary.appendChild(preview);
+    details.appendChild(summary);
+    const bodyEl = el("div", { class: "reasoning-body" });
+    bodyEl.textContent = body;
+    details.appendChild(bodyEl);
+    cell.appendChild(details);
     return cell;
+  }
+
+  function firstLine(text, limit) {
+    if (!text) return "";
+    const line = text.split("\n").find((entry) => entry.trim().length > 0) ?? "";
+    const clean = line.trim().replace(/\s+/g, " ");
+    return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
   }
 
   function renderCommandExec(item) {

@@ -434,6 +434,15 @@ function onTurnStarted(turn) {
       items: [],
     });
   }
+  collapseOlderReasoning();
+}
+
+function collapseOlderReasoning() {
+  const transcript = document.getElementById("transcript");
+  if (!transcript) return;
+  transcript.querySelectorAll("details.reasoning[open]").forEach((node) => {
+    node.removeAttribute("open");
+  });
 }
 
 function onTurnFinished(turn) {

@@ -1088,14 +1088,91 @@ button.diff-expand-all:hover {
    ----------------------------------------------- */
 .reasoning {
   border-left: 2px solid rgba(180, 162, 255, 0.45);
-  padding: 8px 12px;
   margin: 10px 0;
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.6;
-  white-space: pre-wrap;
   background: rgba(180, 162, 255, 0.04);
   border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+.reasoning > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 10px;
+  color: color-mix(in srgb, var(--muted) 85%, white 15%);
+  font-weight: 600;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+.reasoning > summary::-webkit-details-marker { display: none; }
+.reasoning > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
+  opacity: 0.75;
+}
+.reasoning[open] > summary::before {
+  transform: rotate(90deg);
+}
+.reasoning-label {
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.reasoning-effort {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(180, 162, 255, 0.15);
+  color: color-mix(in srgb, #b4a2ff 70%, white 30%);
+  border: 1px solid rgba(180, 162, 255, 0.35);
+  font-weight: 600;
+}
+.reasoning-effort.effort-minimal {
+  background: rgba(160, 160, 160, 0.12);
+  color: #9aa0b4;
+  border-color: rgba(160, 160, 160, 0.3);
+}
+.reasoning-effort.effort-low {
+  background: rgba(80, 180, 120, 0.12);
+  color: #7ed2a6;
+  border-color: rgba(80, 180, 120, 0.3);
+}
+.reasoning-effort.effort-high,
+.reasoning-effort.effort-xhigh {
+  background: rgba(255, 140, 90, 0.12);
+  color: #ffb08a;
+  border-color: rgba(255, 140, 90, 0.35);
+}
+.reasoning-preview {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  font-size: 12px;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.reasoning[open] .reasoning-preview {
+  display: none;
+}
+.reasoning-body {
+  padding: 2px 12px 10px;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  font-size: 12.5px;
 }
 
 /* -----------------------------------------------
