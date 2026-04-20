@@ -33,7 +33,7 @@ ENV NODE_ENV=production
 ENV CODEX_BIN=/usr/local/bin/codex-app-server
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bash ca-certificates git python3 ripgrep \
+  && apt-get install -y --no-install-recommends bash bubblewrap ca-certificates git python3 ripgrep \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/web
