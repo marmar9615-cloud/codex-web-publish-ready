@@ -1,7 +1,13 @@
 import { $, state } from "./state.js";
 
 export function isAuthErrorMessage(message) {
-  return /401|unauthorized|auth/i.test(String(message ?? ""));
+  // Avoid matching substrings like "author", "authority", "authorize" that
+  // frequently appear in non-auth-related errors (e.g. "author not found").
+  // Require word-boundaried auth markers, explicit phrases, or the status code
+  // token before surfacing the auth-required banner.
+  return /\b(?:401|unauthori[sz]ed|authentication\s+(?:failed|required)|invalid[\s-]token|token\s+expired|no\s+refresh\s+token)\b/i.test(
+    String(message ?? ""),
+  );
 }
 
 export function shouldSuppressRetryNoise(message) {

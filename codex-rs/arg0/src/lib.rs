@@ -1,6 +1,6 @@
 use std::fs::File;
+use std::fs::TryLockError;
 use std::future::Future;
-use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -310,13 +310,20 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
         .create(true)
         .truncate(false)
         .open(&lock_path)?;
-    // Use libc flock as a fallback for std::fs::File::try_lock (unstable in <1.89)
-    {
-        let fd = lock_file.as_raw_fd();
-        let ret = unsafe { libc::flock(fd, libc::LOCK_EX) };
-        if ret != 0 {
-            return Err(std::io::Error::last_os_error());
+    // The tempdir is freshly minted via `tempfile::Builder::new().tempdir_in`
+    // so no other process can already hold this lock. Use the non-blocking
+    // stdlib API so a pathological race surfaces as an error instead of an
+    // indefinite hang during startup. Matches the semantics used by
+    // `try_lock_dir` in the janitor below.
+    match lock_file.try_lock() {
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::WouldBlock,
+                "failed to acquire arg0 temp dir lock",
+            ));
         }
+        Err(TryLockError::Error(err)) => return Err(err),
     }
 
     for filename in &[
@@ -436,18 +443,10 @@ fn try_lock_dir(dir: &Path) -> std::io::Result<Option<File>> {
         Err(err) => return Err(err),
     };
 
-    // Use libc flock(LOCK_NB) as a fallback for std::fs::File::try_lock (unstable in <1.89)
-    {
-        let fd = lock_file.as_raw_fd();
-        let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
-        if ret == 0 {
-            return Ok(Some(lock_file));
-        }
-        let err = std::io::Error::last_os_error();
-        if err.raw_os_error() == Some(libc::EWOULDBLOCK) {
-            return Ok(None);
-        }
-        return Err(err);
+    match lock_file.try_lock() {
+        Ok(()) => Ok(Some(lock_file)),
+        Err(TryLockError::WouldBlock) => Ok(None),
+        Err(TryLockError::Error(err)) => Err(err),
     }
 }
 

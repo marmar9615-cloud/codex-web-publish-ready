@@ -26,6 +26,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -96,18 +97,85 @@ const sessions = new Map();
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_MAX = 1000;
 
+function isDefaultAnonymousWorkdir(session) {
+  if (!session?.workdir || !session?.defaultWorkdir) return false;
+  if (session.workdir !== session.defaultWorkdir) return false;
+  // Only remove the workdir if it lives under the anonymous root; named
+  // projects (PROJECTS_ROOT) must be preserved across session eviction.
+  const parent = dirname(session.workdir);
+  const canonicalParent = (() => {
+    try {
+      return realpathSync(parent);
+    } catch {
+      return parent;
+    }
+  })();
+  const canonicalWorkRoot = (() => {
+    try {
+      return realpathSync(WORKDIR_ROOT);
+    } catch {
+      return WORKDIR_ROOT;
+    }
+  })();
+  return canonicalParent === canonicalWorkRoot;
+}
+
+function disposeSession(session, reason) {
+  if (!session) return;
+  try {
+    killBackend(session, reason);
+  } catch (err) {
+    console.error(
+      `[codex-web] killBackend failed during dispose (${reason}):`,
+      err?.message ?? err,
+    );
+  }
+  try {
+    killTerminal(session, reason);
+  } catch (err) {
+    console.error(
+      `[codex-web] killTerminal failed during dispose (${reason}):`,
+      err?.message ?? err,
+    );
+  }
+  try {
+    killMobile(session, reason, { clear: true });
+  } catch (err) {
+    console.error(
+      `[codex-web] killMobile failed during dispose (${reason}):`,
+      err?.message ?? err,
+    );
+  }
+  if (isDefaultAnonymousWorkdir(session)) {
+    try {
+      rmSync(session.workdir, { recursive: true, force: true });
+    } catch (err) {
+      console.error(
+        `[codex-web] rmSync failed during dispose (${reason}):`,
+        err?.message ?? err,
+      );
+    }
+  }
+}
+
 setInterval(
   () => {
     const now = Date.now();
     for (const [id, s] of sessions) {
-      if (now - (s.lastSeenAt ?? s.createdAt) > SESSION_TTL_MS)
+      if (now - (s.lastSeenAt ?? s.createdAt) > SESSION_TTL_MS) {
+        disposeSession(s, "expired");
         sessions.delete(id);
+      }
     }
     if (sessions.size > SESSION_MAX) {
       const sorted = [...sessions.entries()].sort(
         (a, b) => (a[1].lastSeenAt ?? 0) - (b[1].lastSeenAt ?? 0),
       );
-      while (sessions.size > SESSION_MAX) sessions.delete(sorted.shift()[0]);
+      while (sessions.size > SESSION_MAX) {
+        const [evictedId, evictedSession] = sorted.shift();
+        disposeSession(evictedSession, "evicted");
+        sessions.delete(evictedId);
+      }
     }
   },
   60 * 60 * 1000,
@@ -196,12 +264,33 @@ function getSessionFromCookie(cookieHeader) {
 }
 
 function sameOriginOnly(req, res, next) {
+  // CSRF/origin gate. Require that browsers explicitly mark the request as
+  // same-origin via the Origin header. Reject when Origin is missing — this is
+  // what browsers send for any cross-origin fetch, but non-browser clients
+  // (curl, extensions that strip Origin, embedded WebViews) also typically
+  // omit it, so treating a missing Origin as "implicit same-origin" turned
+  // this middleware into a no-op for cookie-bearing non-browser traffic.
+  //
+  // The Sec-Fetch-Site header is also honored when browsers send it — it
+  // distinguishes same-origin/same-site/cross-site/none without requiring
+  // Origin on same-origin GETs. Requests that provide neither are rejected.
   const origin = req.headers.origin;
-  if (!origin) return next();
-  try {
-    const url = new URL(origin);
-    if (url.host === req.headers.host) return next();
-  } catch {}
+  const fetchSite = req.headers["sec-fetch-site"];
+  if (!origin && !fetchSite) {
+    return res.status(403).json({ error: "missing origin" });
+  }
+  if (
+    typeof fetchSite === "string" &&
+    (fetchSite === "same-origin" || fetchSite === "none")
+  ) {
+    if (!origin) return next();
+  }
+  if (origin) {
+    try {
+      const url = new URL(origin);
+      if (url.host === req.headers.host) return next();
+    } catch {}
+  }
   res.status(403).json({ error: "cross-origin request rejected" });
 }
 
@@ -220,11 +309,48 @@ function resolvePathWithinSession(session, candidatePath) {
       ? candidatePath
       : join(session.workdir, candidatePath),
   );
-  const rel = relative(session.workdir, resolved);
-  if (rel.startsWith("..") || rel === "") {
-    return rel === "" ? resolved : null;
+  // Canonicalize by resolving all symlinks along the resolved path. A lexical
+  // containment check cannot see through `ln -s /etc/passwd leak`: the agent
+  // child runs inside the session workdir and can create symlinks at will, so
+  // signing a path via /api/workdir-file/sign or serving it via
+  // /api/workdir-file must verify the real target stays within the workdir.
+  //
+  // realpathSync can also canonicalize the workdir root (useful when the root
+  // itself is a symlink, e.g. macOS /var → /private/var), so we compare the
+  // canonical target against the canonical workdir.
+  let canonicalTarget;
+  let canonicalRoot;
+  try {
+    canonicalRoot = realpathSync(session.workdir);
+  } catch {
+    canonicalRoot = session.workdir;
   }
-  return resolved;
+  try {
+    canonicalTarget = realpathSync(resolved);
+  } catch {
+    // File may not exist yet (e.g. a destination for a write). Fall back to
+    // realpath of the nearest existing ancestor so we still block symlinked
+    // ancestor directories while allowing brand-new files to be created.
+    let ancestor = resolved;
+    while (ancestor && ancestor !== "/" && !existsSync(ancestor)) {
+      ancestor = dirname(ancestor);
+    }
+    try {
+      const canonicalAncestor = ancestor ? realpathSync(ancestor) : ancestor;
+      canonicalTarget = join(
+        canonicalAncestor,
+        relative(ancestor, resolved) || "",
+      );
+    } catch {
+      canonicalTarget = resolved;
+    }
+  }
+  const rel = relative(canonicalRoot, canonicalTarget);
+  if (rel === "") return canonicalTarget;
+  if (rel.startsWith("..") || resolve(canonicalRoot, rel) !== canonicalTarget) {
+    return null;
+  }
+  return canonicalTarget;
 }
 
 function signPreviewToken(sessionId, filePath, expires) {
@@ -510,16 +636,24 @@ function applyOauthTokensToSession(
 ) {
   const claims = parseChatgptClaims(idToken, accessToken);
   session.apiKey = undefined;
+  // Per RFC 6749 §6, the authorization server MAY omit a new refresh token on
+  // refresh; when it does, the existing refresh token remains valid and must
+  // be preserved. Clobbering with `undefined` caused the next refresh attempt
+  // to fall into the "no refresh token available" branch, forcing a full
+  // device-code re-login. Mirror the Rust manager.rs fallback: keep the prior
+  // refreshToken whenever the response didn't issue a new one.
+  const previousOauth = session.oauth ?? {};
   session.oauth = {
-    ...(session.oauth ?? {}),
+    ...previousOauth,
     pending: false,
     error: null,
     accessToken,
-    refreshToken,
-    idToken,
-    email: claims.email,
-    planType: claims.chatgptPlanType,
-    chatgptAccountId: claims.chatgptAccountId,
+    refreshToken: refreshToken ?? previousOauth.refreshToken,
+    idToken: idToken ?? previousOauth.idToken,
+    email: claims.email ?? previousOauth.email,
+    planType: claims.chatgptPlanType ?? previousOauth.planType,
+    chatgptAccountId:
+      claims.chatgptAccountId ?? previousOauth.chatgptAccountId,
     authMode: "chatgptAuthTokens",
     verificationUrl: null,
     userCode: null,
@@ -1911,8 +2045,23 @@ app.post("/api/logout", sameOriginOnly, (req, res) => {
   const session = getOrCreateSession(req, res);
   session.apiKey = undefined;
   session.oauth = undefined;
-  killMobile(session, "logout", { clear: true });
-  killBackend(session, "logout");
+  // Tear down all processes (backend, terminal, mobile preview) and, for
+  // anonymous sessions on the default UUID workdir, wipe the scratch
+  // directory so logout severs all state tied to the previous user. Named
+  // project workdirs live under PROJECTS_ROOT and are preserved by
+  // isDefaultAnonymousWorkdir(). After disposal, re-scaffold the default
+  // workdir so the still-live session can continue anonymously.
+  disposeSession(session, "logout");
+  if (isDefaultAnonymousWorkdir(session)) {
+    try {
+      ensureWorkdirScaffold(session.workdir);
+    } catch (err) {
+      console.error(
+        `[codex-web] re-scaffolding workdir after logout failed:`,
+        err?.message ?? err,
+      );
+    }
+  }
   res.json({ ok: true });
 });
 
@@ -2178,7 +2327,21 @@ app.get("/api/workdir-file", (req, res) => {
     res.status(403).json({ error: "invalid or expired preview signature" });
     return;
   }
-  res.sendFile(filePath);
+  let canonicalRoot;
+  try {
+    canonicalRoot = realpathSync(session.workdir);
+  } catch {
+    canonicalRoot = session.workdir;
+  }
+  const relPath = relative(canonicalRoot, filePath);
+  if (!relPath || relPath.startsWith("..")) {
+    res.status(403).json({ error: "path escapes workdir" });
+    return;
+  }
+  res.sendFile(relPath, {
+    root: canonicalRoot,
+    dotfiles: "deny",
+  });
 });
 
 function isValidPreviewPort(port) {

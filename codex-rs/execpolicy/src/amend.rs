@@ -3,7 +3,6 @@ use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::io::Write;
-use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -155,17 +154,10 @@ fn append_locked_line(policy_path: &Path, line: &str) -> Result<(), AmendError> 
             path: policy_path.to_path_buf(),
             source,
         })?;
-    // Use libc flock as a fallback for std::fs::File::lock (unstable in <1.89)
-    {
-        let fd = file.as_raw_fd();
-        let ret = unsafe { libc::flock(fd, libc::LOCK_EX) };
-        if ret != 0 {
-            return Err(AmendError::LockPolicyFile {
-                path: policy_path.to_path_buf(),
-                source: std::io::Error::last_os_error(),
-            });
-        }
-    }
+    file.lock().map_err(|source| AmendError::LockPolicyFile {
+        path: policy_path.to_path_buf(),
+        source,
+    })?;
 
     file.seek(SeekFrom::Start(0))
         .map_err(|source| AmendError::SeekPolicyFile {

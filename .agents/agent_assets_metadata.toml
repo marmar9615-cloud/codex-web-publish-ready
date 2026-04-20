@@ -1,8 +1,0 @@
-uploads = []
-generated = []
-
-[[outputs]]
-id = "aKQYnfR0b_rJsT_WqSan0"
-uri = "file://audit_report.md"
-type = "text"
-title = "Replit Agent — System Audit (raw structure)"
