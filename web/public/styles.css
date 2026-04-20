@@ -1049,6 +1049,40 @@ body.workspace-collapsed #workspace-panel {
   display: grid;
   grid-template-columns: minmax(0, 44%) minmax(0, 56%);
 }
+#workspace-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px 0;
+  border-top: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.012);
+}
+.workspace-tab {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  color: var(--muted);
+  padding: 6px 12px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  cursor: pointer;
+}
+.workspace-tab:hover {
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.03);
+}
+.workspace-tab.active {
+  color: var(--text);
+  background: rgba(127, 168, 255, 0.08);
+  border-color: rgba(127, 168, 255, 0.24);
+  border-bottom-color: transparent;
+}
+.workspace-tab-pane[hidden] {
+  display: none !important;
+}
 #workspace-runner {
   border-top: 1px solid var(--hairline);
   padding: 12px;

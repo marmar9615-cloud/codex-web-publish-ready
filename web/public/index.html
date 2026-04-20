@@ -215,10 +215,16 @@
             </div>
           </div>
         </div>
-        <section id="workspace-live-preview" aria-label="Workspace live preview"></section>
-        <section id="workspace-mobile" aria-label="Workspace mobile preview"></section>
-        <section id="workspace-terminal" aria-label="Workspace terminal"></section>
-        <section id="workspace-runner" aria-label="Workspace test runner"></section>
+        <nav id="workspace-tabs" role="tablist" aria-label="Workspace tools">
+          <button type="button" role="tab" class="workspace-tab active" data-workspace-tab="terminal" aria-selected="true">Terminal</button>
+          <button type="button" role="tab" class="workspace-tab" data-workspace-tab="preview" aria-selected="false">Preview</button>
+          <button type="button" role="tab" class="workspace-tab" data-workspace-tab="mobile" aria-selected="false">Mobile</button>
+          <button type="button" role="tab" class="workspace-tab" data-workspace-tab="runner" aria-selected="false">Tests</button>
+        </nav>
+        <section id="workspace-terminal" class="workspace-tab-pane active" data-workspace-pane="terminal" aria-label="Workspace terminal"></section>
+        <section id="workspace-live-preview" class="workspace-tab-pane" data-workspace-pane="preview" aria-label="Workspace live preview" hidden></section>
+        <section id="workspace-mobile" class="workspace-tab-pane" data-workspace-pane="mobile" aria-label="Workspace mobile preview" hidden></section>
+        <section id="workspace-runner" class="workspace-tab-pane" data-workspace-pane="runner" aria-label="Workspace test runner" hidden></section>
       </aside>
     </div>
 

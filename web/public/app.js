@@ -929,6 +929,7 @@ function bindUi() {
   $("#cancel-btn").addEventListener("click", () => void interruptTurn());
   $("#new-thread").addEventListener("click", newThread);
   $("#sidebar-toggle-btn")?.addEventListener("click", toggleSidebar);
+  bindWorkspaceTabs();
   $("#account-btn").addEventListener("click", onAccountClick);
   $("#settings-btn").addEventListener("click", () => modals.openSettings());
   $("#workspace-github-btn")?.addEventListener("click", () => {
@@ -1044,6 +1045,37 @@ function applyPersistedSidebarState() {
       document.body.classList.add("sidebar-collapsed");
     }
   } catch {}
+}
+
+function activateWorkspaceTab(name) {
+  const valid = new Set(["terminal", "preview", "mobile", "runner"]);
+  const target = valid.has(name) ? name : "terminal";
+  for (const tab of document.querySelectorAll(".workspace-tab")) {
+    const active = tab.dataset.workspaceTab === target;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  }
+  for (const pane of document.querySelectorAll(".workspace-tab-pane")) {
+    const active = pane.dataset.workspacePane === target;
+    pane.hidden = !active;
+    pane.classList.toggle("active", active);
+  }
+  try {
+    localStorage.setItem("workspaceTab", target);
+  } catch {}
+}
+
+function bindWorkspaceTabs() {
+  for (const tab of document.querySelectorAll(".workspace-tab")) {
+    tab.addEventListener("click", () => {
+      activateWorkspaceTab(tab.dataset.workspaceTab ?? "terminal");
+    });
+  }
+  let initial = "terminal";
+  try {
+    initial = localStorage.getItem("workspaceTab") ?? "terminal";
+  } catch {}
+  activateWorkspaceTab(initial);
 }
 
 function focusComposerAndOpenSlash() {
