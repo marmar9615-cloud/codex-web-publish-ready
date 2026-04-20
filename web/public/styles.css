@@ -743,6 +743,11 @@ body.workspace-collapsed #workspace-panel {
   padding: 12px;
   background: rgba(255, 255, 255, 0.012);
 }
+#workspace-mobile {
+  border-top: 1px solid var(--hairline);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.013);
+}
 #workspace-terminal {
   border-top: 1px solid var(--hairline);
   padding: 12px;
@@ -1022,6 +1027,66 @@ body.workspace-collapsed #workspace-panel {
 .workspace-preview-stage.device-mobile .workspace-preview-frame,
 .workspace-preview-stage.device-tablet .workspace-preview-frame {
   margin-inline: auto;
+}
+.workspace-mobile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.workspace-mobile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(220px, 0.85fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.workspace-mobile-card {
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.workspace-mobile-qr-card {
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+.workspace-mobile-link {
+  display: block;
+  margin-top: 8px;
+  color: var(--accent-bright);
+  text-decoration: none;
+  word-break: break-word;
+}
+.workspace-mobile-link.subdued {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+.workspace-mobile-qr {
+  display: block;
+  width: min(100%, 192px);
+  height: auto;
+  border-radius: 16px;
+  background: white;
+  padding: 10px;
+  box-shadow: var(--shadow-sm);
+}
+.workspace-mobile-output {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: var(--r-lg);
+  background: #04111c;
+  border: 1px solid rgba(127, 168, 255, 0.16);
+  color: #d4e0f7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+  font-family: var(--mono);
 }
 .workspace-media-wrap {
   border: 1px solid var(--hairline);
@@ -2442,6 +2507,9 @@ button.diff-expand-all:hover {
     grid-template-columns: 1fr;
   }
   .workspace-preview-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .workspace-mobile-grid {
     grid-template-columns: 1fr;
   }
   .workspace-db {

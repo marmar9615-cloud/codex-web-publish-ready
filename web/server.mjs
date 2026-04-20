@@ -6,6 +6,7 @@
 
 import express from "express";
 import cookieParser from "cookie-parser";
+import QRCode from "qrcode";
 import { WebSocketServer } from "ws";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -62,6 +63,15 @@ const TERMINAL_REPLAY_RING_SIZE = 400;
 const SHARE_DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const SHARE_MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
 const DB_ROW_LIMIT = 50;
+const MOBILE_OUTPUT_LIMIT = 24_000;
+const MOBILE_POLLABLE_STATUSES = new Set(["starting", "running", "stopping"]);
+const EXPO_CONFIG_FILES = [
+  "app.json",
+  "app.config.js",
+  "app.config.ts",
+  "app.config.mjs",
+  "app.config.cjs",
+];
 
 const CHATGPT_ISSUER = (
   process.env.CODEX_CHATGPT_ISSUER ?? "https://auth.openai.com"
@@ -129,6 +139,7 @@ function makeSession(id) {
     activeThreadId: undefined,
     backend: null,
     terminal: null,
+    mobile: null,
   };
 }
 
@@ -1455,6 +1466,7 @@ app.post("/api/logout", sameOriginOnly, (req, res) => {
   const session = getOrCreateSession(req, res);
   session.apiKey = undefined;
   session.oauth = undefined;
+  killMobile(session, "logout", { clear: true });
   killBackend(session, "logout");
   res.json({ ok: true });
 });
@@ -1727,6 +1739,213 @@ app.get("/preview/:port/*", (req, res) => {
   void proxyPreviewRequest(session, req, res);
 });
 
+app.get("/api/mobile/status", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  try {
+    res.json(await buildMobileStatus(session));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/mobile/start", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  try {
+    await startMobilePreview(session);
+    res.json(await buildMobileStatus(session));
+  } catch (error) {
+    res.status(409).json({ error: error.message });
+  }
+});
+
+app.post("/api/mobile/stop", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  killMobile(session, "stop requested");
+  res.json(await buildMobileStatus(session));
+});
+
+function trimMobileOutput(value) {
+  const text = String(value ?? "");
+  return text.length <= MOBILE_OUTPUT_LIMIT
+    ? text
+    : text.slice(-MOBILE_OUTPUT_LIMIT);
+}
+
+function detectExpoWorkspace(dir) {
+  const packageJsonPath = join(dir, "package.json");
+  const configPath =
+    EXPO_CONFIG_FILES.map((fileName) => join(dir, fileName)).find((path) =>
+      existsSync(path),
+    ) ?? null;
+  let packageJson = null;
+  if (existsSync(packageJsonPath)) {
+    try {
+      packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+    } catch {}
+  }
+  const packageScripts = packageJson?.scripts ?? {};
+  const packageHasExpo = Boolean(
+    packageJson?.dependencies?.expo || packageJson?.devDependencies?.expo,
+  );
+  const startCommand =
+    typeof packageScripts.start === "string" && packageScripts.start.trim()
+      ? "npm run start -- --tunnel"
+      : "npx expo start --tunnel";
+  return {
+    detected: Boolean(configPath || packageHasExpo),
+    configPath,
+    packageJsonPath: existsSync(packageJsonPath) ? packageJsonPath : null,
+    startCommand,
+  };
+}
+
+function updateMobileUrls(mobile, text) {
+  const expoMatches = String(text).match(/\bexp:\/\/[^\s"'`<>()]+/g) ?? [];
+  const expoUrl = expoMatches.at(-1) ?? mobile.expoUrl ?? "";
+  if (expoUrl && expoUrl !== mobile.expoUrl) {
+    mobile.expoUrl = expoUrl;
+    void QRCode.toDataURL(expoUrl, {
+      margin: 1,
+      width: 192,
+    })
+      .then((dataUrl) => {
+        if (mobile.expoUrl === expoUrl) {
+          mobile.qrDataUrl = dataUrl;
+        }
+      })
+      .catch(() => {});
+  }
+  const httpMatches = String(text).match(/\bhttps?:\/\/[^\s"'`<>()]+/g) ?? [];
+  const dashboardUrl =
+    httpMatches.find((value) => /expo\.dev|127\.0\.0\.1|localhost/.test(value)) ??
+    httpMatches.at(-1) ??
+    mobile.dashboardUrl ??
+    "";
+  if (dashboardUrl) {
+    mobile.dashboardUrl = dashboardUrl;
+  }
+}
+
+function serializeMobileState(session, detection) {
+  const mobile = session.mobile;
+  return {
+    detected: detection.detected,
+    configPath: detection.configPath,
+    packageJsonPath: detection.packageJsonPath,
+    startCommand: detection.startCommand,
+    running: Boolean(mobile?.child && !mobile.child.killed),
+    status: mobile?.status ?? "idle",
+    command: mobile?.command ?? detection.startCommand,
+    output: mobile?.output ?? "",
+    expoUrl: mobile?.expoUrl ?? "",
+    dashboardUrl: mobile?.dashboardUrl ?? "",
+    qrDataUrl: mobile?.qrDataUrl ?? "",
+    exitCode: mobile?.exitCode ?? null,
+    signal: mobile?.signal ?? null,
+  };
+}
+
+async function buildMobileStatus(session) {
+  const detection = detectExpoWorkspace(session.workdir);
+  return serializeMobileState(session, detection);
+}
+
+async function startMobilePreview(session) {
+  const detection = detectExpoWorkspace(session.workdir);
+  if (!detection.detected) {
+    throw new Error("No Expo project was detected in the active workspace yet.");
+  }
+  killMobile(session, "restart requested");
+  const shell = process.env.SHELL ?? "zsh";
+  const env = {
+    ...process.env,
+    ...readProjectSecrets(session.activeProjectSlug),
+    CODEX_HOME: join(session.workdir, ".codex"),
+  };
+  mkdirSync(env.CODEX_HOME, { recursive: true });
+  let child;
+  try {
+    child = spawn(shell, ["-lc", detection.startCommand], {
+      cwd: session.workdir,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+    });
+  } catch (error) {
+    throw new Error(`mobile preview failed to start: ${error.message}`);
+  }
+  const mobile = {
+    child,
+    cwd: session.workdir,
+    command: detection.startCommand,
+    status: "starting",
+    output: "",
+    expoUrl: "",
+    dashboardUrl: "",
+    qrDataUrl: "",
+    exitCode: null,
+    signal: null,
+  };
+  session.mobile = mobile;
+
+  const onOutput = (chunk) => {
+    const text = chunk.toString("utf8");
+    mobile.output = trimMobileOutput(`${mobile.output}${text}`);
+    updateMobileUrls(mobile, text);
+    if (mobile.status === "starting") {
+      mobile.status = "running";
+    }
+  };
+
+  child.stdout.on("data", onOutput);
+  child.stderr.on("data", onOutput);
+  child.on("error", (error) => {
+    mobile.status = "error";
+    mobile.output = trimMobileOutput(`${mobile.output}\n${error.message}\n`);
+  });
+  child.on("exit", (code, signal) => {
+    mobile.child = null;
+    mobile.exitCode = code;
+    mobile.signal = signal;
+    if (mobile.status === "stopping") {
+      mobile.status = "stopped";
+      return;
+    }
+    mobile.status = code === 0 ? "exited" : "failed";
+  });
+}
+
+function killMobile(session, reason, options = {}) {
+  const mobile = session.mobile;
+  if (!mobile) return;
+  const child = mobile.child;
+  if (child && !child.killed) {
+    mobile.status = "stopping";
+    mobile.output = trimMobileOutput(
+      `${mobile.output}\n[codex-web] stopping mobile preview (${reason})\n`,
+    );
+    try {
+      if (process.platform !== "win32" && child.pid) {
+        process.kill(-child.pid, "SIGTERM");
+      } else {
+        child.kill("SIGTERM");
+      }
+    } catch {}
+    setTimeout(() => {
+      try {
+        if (process.platform !== "win32" && child.pid) {
+          process.kill(-child.pid, "SIGKILL");
+        } else if (!child.killed) {
+          child.kill("SIGKILL");
+        }
+      } catch {}
+    }, 1500).unref();
+  }
+  if (options.clear) {
+    session.mobile = null;
+  }
+}
+
 function guessExtensionFromMime(mimeType) {
   switch (mimeType) {
     case "image/png":
@@ -1916,6 +2135,7 @@ function activateProjectForSession(session, slug) {
     session.activeThreadId = undefined;
     session.workdir = session.defaultWorkdir;
     ensureWorkdirScaffold(session.workdir);
+    killMobile(session, "workspace switched", { clear: true });
     killTerminal(session, "workspace switched");
     killBackend(session, "workspace switched");
     return {
@@ -1936,6 +2156,7 @@ function activateProjectForSession(session, slug) {
   session.activeThreadId = undefined;
   session.workdir = dir;
   ensureWorkdirScaffold(session.workdir);
+  killMobile(session, `workspace switched:${slug}`, { clear: true });
   killTerminal(session, `workspace switched:${slug}`);
   killBackend(session, `workspace switched:${slug}`);
   return serializeProject(session, project, dir);

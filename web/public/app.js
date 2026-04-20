@@ -12,6 +12,7 @@ import { createRenderers } from "./renderers.js";
 import { createModals } from "./modals.js";
 import { createFileTree } from "./filetree.js";
 import { createLivePreview } from "./preview.js";
+import { createMobilePreview } from "./mobile.js";
 import { createTerminal } from "./terminal.js";
 import { createTestRunner } from "./tests.js";
 import { createTodoPane } from "./todos.js";
@@ -124,6 +125,10 @@ const livePreview = createLivePreview({
   appendSystem: renderers.appendSystem,
 });
 
+const mobilePreview = createMobilePreview({
+  appendSystem: renderers.appendSystem,
+});
+
 const terminal = createTerminal({
   appendSystem: renderers.appendSystem,
 });
@@ -190,6 +195,7 @@ async function bootstrap() {
   bindUi();
   fileTree.init();
   livePreview.init();
+  mobilePreview.init();
   terminal.init();
   testRunner.init();
   todoPane.init();
@@ -213,6 +219,9 @@ async function refreshWhoAmI() {
     });
     await livePreview.refresh().catch((error) => {
       console.warn("preview refresh failed", error.message);
+    });
+    await mobilePreview.refresh().catch((error) => {
+      console.warn("mobile preview refresh failed", error.message);
     });
     await terminal.refresh().catch((error) => {
       console.warn("terminal refresh failed", error.message);
