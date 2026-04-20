@@ -294,9 +294,60 @@ export function createModals({
               );
             const verificationUrl = data?.verificationUrl;
             const userCode = data?.userCode;
-            status.innerHTML = userCode
-              ? `Open <a href="${escapeHtml(verificationUrl)}" target="_blank" rel="noopener">${escapeHtml(verificationUrl)}</a> and enter code <code>${escapeHtml(userCode)}</code>.`
-              : `Open <a href="${escapeHtml(verificationUrl)}" target="_blank" rel="noopener">${escapeHtml(verificationUrl)}</a> to continue.`;
+            if (userCode) {
+              const safeUrl = escapeHtml(verificationUrl);
+              const safeCode = escapeHtml(userCode);
+              status.innerHTML = `
+                <div class="device-code-flow">
+                  <div class="device-code-steps">
+                    <div>1. A new tab just opened at <a href="${safeUrl}" target="_blank" rel="noopener">${safeUrl}</a></div>
+                    <div>2. Paste this code and click <strong>Continue</strong>:</div>
+                  </div>
+                  <div class="device-code-row">
+                    <code class="device-code-value" id="device-code-value">${safeCode}</code>
+                    <button type="button" class="ghost" id="device-code-copy">Copy</button>
+                  </div>
+                  <div class="device-code-steps">
+                    <div>3. Approve the sign-in on ChatGPT.</div>
+                    <div>4. Come back here — you'll be signed in automatically.</div>
+                  </div>
+                  <div id="device-code-hint" class="muted modal-status">Waiting for you to approve in the other tab…</div>
+                </div>
+              `;
+              const openedTab = window.open(
+                verificationUrl,
+                "_blank",
+                "noopener,noreferrer",
+              );
+              const hintEl = mount.querySelector("#device-code-hint");
+              const copyCodeToClipboard = async (showToast = false) => {
+                try {
+                  await navigator.clipboard.writeText(userCode);
+                  if (showToast && hintEl) {
+                    hintEl.textContent = "Code copied. Paste it in the new tab to continue.";
+                  }
+                  return true;
+                } catch {
+                  return false;
+                }
+              };
+              void copyCodeToClipboard(false);
+              if (!openedTab && hintEl) {
+                hintEl.textContent =
+                  "Your browser blocked the popup — click the link above to open the sign-in page manually.";
+              }
+              const copyBtn = mount.querySelector("#device-code-copy");
+              copyBtn?.addEventListener("click", async () => {
+                const ok = await copyCodeToClipboard(true);
+                copyBtn.textContent = ok ? "Copied" : "Copy failed";
+                setTimeout(() => {
+                  copyBtn.textContent = "Copy";
+                }, 1500);
+              });
+            } else {
+              status.innerHTML = `Open <a href="${escapeHtml(verificationUrl)}" target="_blank" rel="noopener">${escapeHtml(verificationUrl)}</a> to continue.`;
+              window.open(verificationUrl, "_blank", "noopener,noreferrer");
+            }
             const startedAt = Date.now();
             const poll = async () => {
               await refreshWhoAmI();
