@@ -1285,6 +1285,75 @@ app.post(
   },
 );
 
+app.get(
+  "/api/projects/:slug/logs/render",
+  sameOriginOnly,
+  async (req, res) => {
+    const session = getOrCreateSession(req, res);
+    const slug = String(req.params.slug ?? "");
+    const context = getProjectContext(session, slug);
+    if (!context) {
+      res.status(404).json({ error: "project not found" });
+      return;
+    }
+    const apiKey = getRenderApiKey(slug);
+    const serviceId = getRenderServiceId(slug);
+    if (!apiKey || !serviceId) {
+      res.json({
+        configured: false,
+        hasApiKey: Boolean(apiKey),
+        hasServiceId: Boolean(serviceId),
+        logs: [],
+      });
+      return;
+    }
+    const limit = Math.max(
+      10,
+      Math.min(500, Number.parseInt(req.query.limit ?? "100", 10) || 100),
+    );
+    const params = new URLSearchParams();
+    params.append("resource", serviceId);
+    params.append("limit", String(limit));
+    if (req.query.startTime) params.append("startTime", String(req.query.startTime));
+    if (req.query.endTime) params.append("endTime", String(req.query.endTime));
+    try {
+      const response = await fetch(
+        `https://api.render.com/v1/logs?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/json",
+          },
+        },
+      );
+      const text = await response.text();
+      if (!response.ok) {
+        res.status(response.status).json({
+          configured: true,
+          error: `Render API returned ${response.status}: ${truncateOutput(text, 400)}`,
+        });
+        return;
+      }
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { logs: [] };
+      }
+      res.json({
+        configured: true,
+        serviceIdLabel: serviceId.slice(0, 12) + "…",
+        logs: Array.isArray(data.logs) ? data.logs : [],
+        hasMore: Boolean(data.hasMore),
+        nextStartTime: data.nextStartTime ?? null,
+        nextEndTime: data.nextEndTime ?? null,
+      });
+    } catch (error) {
+      res.status(502).json({ configured: true, error: error.message });
+    }
+  },
+);
+
 app.get("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
   const session = getOrCreateSession(req, res);
   const slug = String(req.params.slug ?? "");
@@ -2319,6 +2388,23 @@ function getRenderSyncHookUrl(slug) {
     getProjectSecretValue(slug, "RENDER_SYNC_HOOK_URL") ??
     getProjectSecretValue(slug, "RENDER_DEPLOY_HOOK_URL") ??
     process.env.CODEX_WEB_RENDER_SYNC_HOOK_URL ??
+    null
+  );
+}
+
+function getRenderApiKey(slug) {
+  return (
+    getProjectSecretValue(slug, "RENDER_API_KEY") ??
+    process.env.CODEX_WEB_RENDER_API_KEY ??
+    process.env.RENDER_API_KEY ??
+    null
+  );
+}
+
+function getRenderServiceId(slug) {
+  return (
+    getProjectSecretValue(slug, "RENDER_SERVICE_ID") ??
+    process.env.CODEX_WEB_RENDER_SERVICE_ID ??
     null
   );
 }

@@ -486,6 +486,46 @@ export function createModals({
     }
   }
 
+  async function loadProjectLogsData() {
+    const slug = state.whoami?.activeProjectSlug;
+    if (!slug) {
+      return {
+        available: false,
+        slug: null,
+        configured: false,
+        hasApiKey: false,
+        hasServiceId: false,
+        logs: [],
+        error: null,
+      };
+    }
+    try {
+      const data = await fetchProjectJson(
+        `/api/projects/${encodeURIComponent(slug)}/logs/render?limit=150`,
+      );
+      return {
+        available: true,
+        slug,
+        configured: Boolean(data.configured),
+        hasApiKey: Boolean(data.hasApiKey),
+        hasServiceId: Boolean(data.hasServiceId),
+        serviceIdLabel: data.serviceIdLabel ?? null,
+        logs: Array.isArray(data.logs) ? data.logs : [],
+        error: null,
+      };
+    } catch (error) {
+      return {
+        available: true,
+        slug,
+        configured: false,
+        hasApiKey: false,
+        hasServiceId: false,
+        logs: [],
+        error: error.message,
+      };
+    }
+  }
+
   async function loadProjectShipData() {
     const slug = state.whoami?.activeProjectSlug;
     if (!slug) {
@@ -727,6 +767,60 @@ export function createModals({
     `;
   }
 
+  function renderProjectLogsPanel(logsData) {
+    if (!logsData.available) {
+      return '<div class="manager-empty">Activate a named project to stream its logs.</div>';
+    }
+    if (logsData.error) {
+      return `<div class="manager-empty">Logs failed to load: ${escapeHtml(logsData.error)}</div>`;
+    }
+    if (!logsData.configured) {
+      const missing = [];
+      if (!logsData.hasApiKey) missing.push("<code>RENDER_API_KEY</code>");
+      if (!logsData.hasServiceId) missing.push("<code>RENDER_SERVICE_ID</code>");
+      return `
+        <p class="settings-copy">Stream live logs from your Render service without leaving Codex Web.</p>
+        <div class="manager-empty logs-setup">
+          <p><strong>Missing secrets:</strong> ${missing.join(" and ")}.</p>
+          <p>Add them in the project secrets (Settings → Secrets) or as Render environment variables. <code>RENDER_API_KEY</code> is a personal access token from the Render dashboard; <code>RENDER_SERVICE_ID</code> is the id of the service you want to tail (format <code>srv-...</code>).</p>
+        </div>
+      `;
+    }
+    const lines = (logsData.logs ?? [])
+      .slice()
+      .sort((left, right) => {
+        const leftTs = new Date(left.timestamp ?? 0).getTime();
+        const rightTs = new Date(right.timestamp ?? 0).getTime();
+        return leftTs - rightTs;
+      })
+      .map((log) => {
+        const ts = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "";
+        const level = log.labels?.type ?? log.labels?.level ?? "";
+        const message = String(log.message ?? "");
+        return `
+          <div class="log-line log-level-${escapeHtml(level || "info")}">
+            <span class="log-time">${escapeHtml(ts)}</span>
+            ${level ? `<span class="log-level">${escapeHtml(level)}</span>` : ""}
+            <span class="log-message">${escapeHtml(message)}</span>
+          </div>
+        `;
+      })
+      .join("");
+    return `
+      <p class="settings-copy">Live tail of your Render service (${escapeHtml(logsData.serviceIdLabel ?? "configured")}). Auto-refresh polls every 8 seconds; toggle it off to freeze the view.</p>
+      <div class="logs-actions">
+        <button id="logs-refresh" type="button" class="ghost">Refresh now</button>
+        <label class="logs-autorefresh">
+          <input id="logs-autorefresh" type="checkbox" />
+          <span>Auto-refresh (8s)</span>
+        </label>
+      </div>
+      <div id="logs-viewer" class="logs-viewer">
+        ${lines || '<div class="manager-blurb">No log lines returned yet — try triggering a deploy or hitting the app.</div>'}
+      </div>
+    `;
+  }
+
   function renderProjectShipPanel(shipData, lastResult) {
     if (!shipData.available) {
       return '<div class="manager-empty">Activate a named project from the sidebar before running Ship it.</div>';
@@ -806,7 +900,18 @@ export function createModals({
       deploy: null,
       error: null,
     };
+    let currentLogsData = {
+      available: false,
+      slug: null,
+      configured: false,
+      hasApiKey: false,
+      hasServiceId: false,
+      logs: [],
+      error: null,
+    };
     let lastShipResult = null;
+    let logsAutoRefresh = false;
+    let logsTimer = null;
 
     const panel = (tab, body) => `
       <section class="settings-panel" data-project-panel="${tab}" ${currentTab === tab ? "" : "hidden"}>
@@ -821,10 +926,12 @@ export function createModals({
         <button type="button" class="settings-tab ${currentTab === "git" ? "active" : ""}" data-project-tab="git">GitHub</button>
         <button type="button" class="settings-tab ${currentTab === "deploy" ? "active" : ""}" data-project-tab="deploy">Deploy</button>
         <button type="button" class="settings-tab ${currentTab === "ship" ? "active" : ""}" data-project-tab="ship">Ship it</button>
+        <button type="button" class="settings-tab ${currentTab === "logs" ? "active" : ""}" data-project-tab="logs">Logs</button>
       </div>
       ${panel("git", renderProjectGitPanel(currentGitData))}
       ${panel("deploy", renderProjectDeployPanel(currentDeployData))}
       ${panel("ship", renderProjectShipPanel(currentShipData, lastShipResult))}
+      ${panel("logs", renderProjectLogsPanel(currentLogsData))}
       <div class="modal-actions">
         <button id="project-tools-close" type="button" class="ghost">Close</button>
       </div>
@@ -861,6 +968,33 @@ export function createModals({
           rerender();
         };
 
+        const refreshLogs = async () => {
+          currentLogsData = await loadProjectLogsData();
+          rerender();
+        };
+
+        const stopLogsTimer = () => {
+          if (logsTimer) {
+            clearInterval(logsTimer);
+            logsTimer = null;
+          }
+        };
+
+        const startLogsTimer = () => {
+          stopLogsTimer();
+          logsTimer = setInterval(() => {
+            if (!logsAutoRefresh || currentTab !== "logs") {
+              stopLogsTimer();
+              return;
+            }
+            void loadProjectLogsData().then((data) => {
+              currentLogsData = data;
+              // Preserve auto-refresh state across re-renders.
+              rerender();
+            });
+          }, 8000);
+        };
+
         const refreshAll = async () => {
           [currentGitData, currentDeployData, currentShipData] = await Promise.all([
             loadProjectGitData(),
@@ -871,11 +1005,21 @@ export function createModals({
         };
 
         const bind = () => {
-          mount.querySelector("#project-tools-close")?.addEventListener("click", closeModal);
+          mount.querySelector("#project-tools-close")?.addEventListener("click", () => {
+            stopLogsTimer();
+            closeModal();
+          });
           mount.querySelectorAll("[data-project-tab]").forEach((button) => {
             button.addEventListener("click", () => {
-              currentTab = button.dataset.projectTab ?? "git";
+              const nextTab = button.dataset.projectTab ?? "git";
+              if (nextTab !== "logs") {
+                stopLogsTimer();
+              }
+              currentTab = nextTab;
               rerender();
+              if (currentTab === "logs" && !currentLogsData.available) {
+                void refreshLogs();
+              }
             });
           });
 
@@ -1097,10 +1241,30 @@ export function createModals({
               button.disabled = false;
             }
           });
+
+          mount.querySelector("#logs-refresh")?.addEventListener("click", () => {
+            void refreshLogs();
+          });
+          const autoRefreshInput = mount.querySelector("#logs-autorefresh");
+          if (autoRefreshInput) {
+            autoRefreshInput.checked = logsAutoRefresh;
+            autoRefreshInput.addEventListener("change", () => {
+              logsAutoRefresh = autoRefreshInput.checked;
+              if (logsAutoRefresh) {
+                startLogsTimer();
+                void refreshLogs();
+              } else {
+                stopLogsTimer();
+              }
+            });
+          }
         };
 
         bind();
         void refreshAll();
+        if (currentTab === "logs") {
+          void refreshLogs();
+        }
       },
       { className: "modal-wide" },
     );
