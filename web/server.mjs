@@ -2348,14 +2348,68 @@ function isValidPreviewPort(port) {
   return Number.isInteger(port) && port >= 1024 && port <= 65535 && port !== PORT;
 }
 
+function parseProcNetTcpPorts(text) {
+  // Lines look like:
+  //   sl  local_address rem_address   st ...
+  //    0: 00000000:1F90 00000000:0000 0A ...
+  // Column 2 is local_address as HEX_IP:HEX_PORT, column 4 is TCP state
+  // (0A = LISTEN).
+  const ports = [];
+  for (const line of String(text ?? "").split(/\r?\n/).slice(1)) {
+    const cols = line.trim().split(/\s+/);
+    if (cols.length < 4) continue;
+    const local = cols[1];
+    const st = cols[3];
+    if (st !== "0A") continue;
+    const idx = local.lastIndexOf(":");
+    if (idx < 0) continue;
+    const port = Number.parseInt(local.slice(idx + 1), 16);
+    if (!Number.isFinite(port)) continue;
+    ports.push(port);
+  }
+  return ports;
+}
+
+function detectPreviewPortsViaProc() {
+  const ports = new Set();
+  for (const path of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    try {
+      const text = readFileSync(path, "utf8");
+      for (const port of parseProcNetTcpPorts(text)) {
+        ports.add(port);
+      }
+    } catch {
+      // file missing or unreadable — skip
+    }
+  }
+  const out = [];
+  for (const port of ports) {
+    if (!isValidPreviewPort(port)) continue;
+    out.push({ command: "unknown", pid: 0, port });
+  }
+  out.sort((left, right) => left.port - right.port);
+  return out;
+}
+
 async function detectListeningPreviewPorts() {
   const result = await runProcess(
     "lsof",
     ["-nP", "-iTCP", "-sTCP:LISTEN"],
     { timeoutMs: 5_000 },
   );
-  if (!result.ok && result.code !== 1) {
-    throw new Error(result.stderr || "preview port detection failed");
+  // `lsof` exits with 1 when it finds no matching file descriptors — that's
+  // fine; treat spawn failure (code === null, e.g. ENOENT) or any other
+  // non-1 error as a reason to fall back to parsing /proc/net/tcp*.
+  const lsofSpawnFailed = result.code === null;
+  if (!result.ok && !lsofSpawnFailed && result.code !== 1) {
+    // lsof ran but exploded for some other reason — log and fall back.
+    console.warn(
+      "lsof failed for preview port detection; falling back to /proc:",
+      result.stderr,
+    );
+  }
+  if (lsofSpawnFailed || (!result.ok && result.code !== 1)) {
+    return detectPreviewPortsViaProc();
   }
   const seen = new Set();
   const ports = [];

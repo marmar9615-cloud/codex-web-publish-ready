@@ -2501,7 +2501,9 @@ export function createModals({
                 closeModal();
                 await refreshAccount().catch(() => {});
                 await refreshModels().catch(() => {});
-                appendSystem("Signed in with ChatGPT.");
+                // Don't emit a sign-in system message here — the backend's
+                // `account/updated` notification (see notifications.js) already
+                // prints one with the plan type; this one would duplicate.
                 return;
               }
               if (state.whoami?.oauthError) {

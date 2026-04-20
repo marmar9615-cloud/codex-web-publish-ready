@@ -1,4 +1,40 @@
 import { state } from "./state.js";
+import { showToast } from "./toast.js";
+
+// Reconnect backoff parameters. The previous implementation capped at 5 s with
+// no jitter, which meant a backend that was slow to answer `initialize` would
+// spam the transcript with dozens of identical errors per minute. We cap much
+// higher and add jitter so reconnect storms thin out.
+const RECONNECT_BASE_MS = 500;
+const RECONNECT_CAP_MS = 30_000;
+const WS_READY_WATCHDOG_MS = 15_000;
+
+function reconnectDelayMs(attempt) {
+  const exponential = Math.min(
+    RECONNECT_CAP_MS,
+    RECONNECT_BASE_MS * 2 ** attempt,
+  );
+  // ±25% jitter so many clients don't reconnect in lockstep.
+  const jitter = exponential * 0.25 * (Math.random() * 2 - 1);
+  return Math.max(250, Math.round(exponential + jitter));
+}
+
+function setWsStatusPill(text, kind) {
+  const pill = document.getElementById("ws-status-pill");
+  if (!pill) return;
+  if (!text) {
+    pill.hidden = true;
+    pill.textContent = "";
+    pill.classList.remove("pill-danger", "pill-warn", "ok");
+    return;
+  }
+  pill.hidden = false;
+  pill.textContent = text;
+  pill.classList.remove("pill-danger", "pill-warn", "ok");
+  if (kind === "error") pill.classList.add("pill-danger");
+  else if (kind === "warn") pill.classList.add("pill-warn");
+  else if (kind === "ok") pill.classList.add("ok");
+}
 
 export function createRpc({
   onNotification,
@@ -14,6 +50,8 @@ export function createRpc({
   appendSystem,
   setInFlight,
 }) {
+  let disconnectToastShown = false;
+  let readyWatchdog = null;
   function rpcRaw(obj) {
     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
       state.ws.send(JSON.stringify(obj));
@@ -59,7 +97,13 @@ export function createRpc({
           state.initialized = true;
           return;
         }
-        console.error("initialize failed", error);
+        console.warn("initialize failed", error);
+        setWsStatusPill("backend not ready", "warn");
+        // Force the socket closed so the onclose handler schedules the next
+        // attempt with exponential backoff instead of letting this one hang.
+        try {
+          state.ws?.close();
+        } catch {}
       });
   }
 
@@ -81,12 +125,37 @@ export function createRpc({
     onNotification(message.method, message.params ?? {});
   }
 
+  function armReadyWatchdog(ws) {
+    if (readyWatchdog) clearTimeout(readyWatchdog);
+    readyWatchdog = setTimeout(() => {
+      if (state.ws !== ws) return;
+      if (ws.readyState === WebSocket.OPEN && state.initialized) return;
+      // Socket is stuck — either never opened or initialize never completed.
+      // Force-close so the onclose handler schedules a reconnect with backoff.
+      console.warn("ws ready watchdog fired; forcing reconnect");
+      try {
+        ws.close();
+      } catch {}
+    }, WS_READY_WATCHDOG_MS);
+  }
+
+  function clearReadyWatchdog() {
+    if (readyWatchdog) {
+      clearTimeout(readyWatchdog);
+      readyWatchdog = null;
+    }
+  }
+
   function connectWs() {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${protocol}//${location.host}/ws`);
     state.ws = ws;
+    setWsStatusPill("link: connecting…", "warn");
+    armReadyWatchdog(ws);
     ws.addEventListener("open", async () => {
       state.reconnectAttempts = 0;
+      disconnectToastShown = false;
+      setWsStatusPill("link: syncing…", "warn");
       await initializeRpcSession();
       await refreshWhoAmI();
       await refreshThreads();
@@ -106,6 +175,8 @@ export function createRpc({
         }
       }
       void pushSettingsToBackend().catch(() => {});
+      clearReadyWatchdog();
+      setWsStatusPill(null);
       window.dispatchEvent(new CustomEvent("codex:ready"));
     });
     ws.addEventListener("message", (event) => {
@@ -119,17 +190,24 @@ export function createRpc({
       state.ws = null;
       state.initialized = false;
       setInFlight(false);
+      clearReadyWatchdog();
       if (event.code === 4401) {
+        setWsStatusPill("session expired", "error");
         appendSystem("Session expired. Reload the page.", "error");
         return;
       }
-      appendSystem(
-        `Disconnected${event.reason ? ` (${event.reason})` : ""}. Reconnecting…`,
-      );
-      setTimeout(
-        connectWs,
-        Math.min(5000, 500 * 2 ** state.reconnectAttempts++),
-      );
+      const attempt = state.reconnectAttempts++;
+      const delay = reconnectDelayMs(attempt);
+      const delaySec = Math.max(1, Math.round(delay / 1000));
+      setWsStatusPill(`reconnecting in ${delaySec}s…`, "warn");
+      if (!disconnectToastShown) {
+        disconnectToastShown = true;
+        showToast(
+          `Disconnected${event.reason ? ` (${event.reason})` : ""}. Reconnecting…`,
+          "warn",
+        );
+      }
+      setTimeout(connectWs, delay);
     });
     ws.addEventListener("error", () => ws.close());
   }

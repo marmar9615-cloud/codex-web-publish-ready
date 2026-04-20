@@ -1529,10 +1529,16 @@ body.workspace-collapsed #workspace-panel {
   min-height: auto;
   padding: 0;
 }
-.pill.warn {
+.pill.warn,
+.pill.pill-warn {
   color: var(--warn);
   border-color: rgba(255, 201, 138, 0.28);
   background: rgba(255, 201, 138, 0.08);
+}
+.pill.pill-danger {
+  color: var(--danger);
+  border-color: rgba(255, 138, 154, 0.32);
+  background: rgba(255, 138, 154, 0.08);
 }
 
 /* -----------------------------------------------

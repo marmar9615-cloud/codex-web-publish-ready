@@ -1,4 +1,5 @@
 import { $, load, save, state } from "./state.js";
+import { showToast } from "./toast.js";
 import { escapeHtml } from "./utils.js";
 
 const previewUi = load("livePreviewUi", {
@@ -136,7 +137,8 @@ export function createLivePreview({ appendSystem }) {
       try {
         await activate();
       } catch (error) {
-        appendSystem(`preview activation failed: ${error.message}`, "error");
+        console.warn("preview activation failed", error);
+        showToast(`Preview activation failed: ${error.message}`, "error");
       } finally {
         if (button) button.disabled = false;
       }
@@ -147,7 +149,8 @@ export function createLivePreview({ appendSystem }) {
       try {
         await refreshPorts();
       } catch (error) {
-        appendSystem(`preview detection failed: ${error.message}`, "error");
+        console.warn("preview detection failed", error);
+        showToast(`Preview detection failed: ${error.message}`, "error");
       } finally {
         if (button) button.disabled = false;
       }
@@ -194,7 +197,7 @@ export function createLivePreview({ appendSystem }) {
     const port = Number.parseInt(String(previewUi.port ?? ""), 10);
     if (!Number.isInteger(port)) {
       if (!options.quiet) {
-        appendSystem("enter a local preview port first", "warn");
+        showToast("Enter a local preview port first.", "warn");
       }
       return;
     }
@@ -226,11 +229,13 @@ export function createLivePreview({ appendSystem }) {
       currentWorkdir = nextWorkdir;
       activeBaseUrl = "";
       await refreshPorts().catch((error) => {
-        appendSystem(`preview detection failed: ${error.message}`, "error");
+        // Silent on auto-refresh — no chat transcript noise. The user will
+        // see an empty port list, and manual Detect surfaces a toast.
+        console.warn("preview auto-detection failed", error);
       });
       if (previewUi.port) {
         await activate({ quiet: true }).catch((error) => {
-          appendSystem(`preview activation failed: ${error.message}`, "warn");
+          console.warn("preview auto-activation failed", error);
         });
       }
       render();
