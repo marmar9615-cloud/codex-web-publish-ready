@@ -27,6 +27,8 @@ const IMAGE_EXTENSIONS = new Set([
 ]);
 
 const HTML_EXTENSIONS = new Set([".html", ".htm"]);
+const DATABASE_EXTENSIONS = new Set([".db", ".db3", ".sqlite", ".sqlite3"]);
+const DATABASE_PAGE_LIMIT = 50;
 
 function fileExtension(path) {
   const index = String(path ?? "").lastIndexOf(".");
@@ -65,6 +67,34 @@ function isTextRenderable(path, text) {
   return !looksBinary(text);
 }
 
+function isDatabaseFile(path) {
+  return DATABASE_EXTENSIONS.has(fileExtension(path));
+}
+
+function createSelectedFile(overrides = {}) {
+  return {
+    path: "",
+    text: "",
+    loading: false,
+    error: "",
+    previewUrl: "",
+    database: null,
+    ...overrides,
+  };
+}
+
+function formatDatabaseCell(value) {
+  if (value == null) return "NULL";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 function sortEntries(entries) {
   return [...entries].sort((left, right) => {
     if (left.isDirectory !== right.isDirectory) {
@@ -79,13 +109,7 @@ export function createFileTree({ rpcCall, appendSystem }) {
   const expandedDirectories = new Set();
   let activeRoot = "";
   let watchId = null;
-  let selectedFile = {
-    path: "",
-    text: "",
-    loading: false,
-    error: "",
-    previewUrl: "",
-  };
+  let selectedFile = createSelectedFile();
 
   function persistUi() {
     save("workspaceUi", workspaceUi);
@@ -177,6 +201,84 @@ export function createFileTree({ rpcCall, appendSystem }) {
     }
   }
 
+  async function fetchJson(url) {
+    const response = await fetch(url);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error ?? `request failed (${response.status})`);
+    }
+    return data;
+  }
+
+  async function fetchDatabaseTable(path, table, offset = 0) {
+    return fetchJson(
+      `/api/db/table?path=${encodeURIComponent(path)}&table=${encodeURIComponent(table)}&limit=${DATABASE_PAGE_LIMIT}&offset=${offset}`,
+    );
+  }
+
+  async function openDatabase(path, options = {}) {
+    const currentDatabase =
+      selectedFile.path === path ? selectedFile.database : null;
+    selectedFile = createSelectedFile({
+      path,
+      loading: true,
+      database: currentDatabase,
+    });
+    renderTree();
+    renderViewer();
+    try {
+      const inspect = await fetchJson(
+        `/api/db/inspect?path=${encodeURIComponent(path)}`,
+      );
+      const tables = inspect.tables ?? [];
+      const selectedTable =
+        options.table ??
+        currentDatabase?.selectedTable ??
+        tables[0]?.name ??
+        "";
+      let tableData = {
+        columns: [],
+        rows: [],
+        totalRows: 0,
+        offset: 0,
+        limit: DATABASE_PAGE_LIMIT,
+      };
+      if (selectedTable) {
+        tableData = await fetchDatabaseTable(
+          path,
+          selectedTable,
+          options.offset ?? 0,
+        );
+      }
+      selectedFile = createSelectedFile({
+        path,
+        loading: false,
+        database: {
+          dialect: inspect.dialect ?? "sqlite",
+          tables,
+          selectedTable,
+          columns: tableData.columns ?? [],
+          rows: tableData.rows ?? [],
+          totalRows: tableData.totalRows ?? null,
+          offset: tableData.offset ?? 0,
+          limit: tableData.limit ?? DATABASE_PAGE_LIMIT,
+        },
+      });
+      renderTree();
+      renderViewer();
+    } catch (error) {
+      selectedFile = createSelectedFile({
+        path,
+        loading: false,
+        error: error.message,
+      });
+      renderViewer();
+      if (!options.quiet) {
+        appendSystem(`database preview failed: ${error.message}`, "error");
+      }
+    }
+  }
+
   function renderTreeBranch(dir, depth) {
     const entries = treeCache.get(dir) ?? [];
     if (!entries.length && depth === 0) {
@@ -260,10 +362,102 @@ export function createFileTree({ rpcCall, appendSystem }) {
     const isImage = IMAGE_EXTENSIONS.has(extension);
     const isHtml = HTML_EXTENSIONS.has(extension);
     const isMarkdown = MARKDOWN_EXTENSIONS.has(extension);
+    const database = selectedFile.database;
+    const selectedTableMeta = database?.tables?.find(
+      (table) => table.name === database.selectedTable,
+    );
+    const databaseColumns =
+      database?.columns?.map((column) => column.name ?? "") ??
+      [];
+    const databaseBody = !database?.tables?.length
+      ? '<div class="workspace-empty">No tables or views were found in this SQLite database.</div>'
+      : `
+        <div class="workspace-db">
+          <aside class="workspace-db-sidebar">
+            <div class="workspace-section-title">Tables</div>
+            <div class="workspace-db-list">
+              ${database.tables
+                .map(
+                  (table) => `
+                    <button
+                      type="button"
+                      class="workspace-db-table-button${table.name === database.selectedTable ? " active" : ""}"
+                      data-db-table="${escapeHtml(table.name ?? "")}"
+                    >
+                      <span>${escapeHtml(table.name ?? "")}</span>
+                      <span class="workspace-db-kind">${escapeHtml(table.type ?? "table")}</span>
+                    </button>
+                  `,
+                )
+                .join("")}
+            </div>
+          </aside>
+          <div class="workspace-db-panel">
+            <div class="workspace-db-meta">
+              <span>${escapeHtml(selectedTableMeta?.name ?? "Select a table")}</span>
+              <span>${database.totalRows == null ? "row count unavailable" : `${database.totalRows} rows`}</span>
+              <span>${database.columns?.length ?? 0} columns</span>
+            </div>
+            ${
+              database.selectedTable
+                ? `
+                  <div class="workspace-db-controls">
+                    <button type="button" class="ghost" data-db-prev ${
+                      database.offset > 0 ? "" : "disabled"
+                    }>Previous</button>
+                    <button type="button" class="ghost" data-db-next ${
+                      database.totalRows != null &&
+                      database.offset + database.rows.length >= database.totalRows
+                        ? "disabled"
+                        : ""
+                    }>Next</button>
+                    <button type="button" class="ghost" data-db-refresh>Refresh table</button>
+                  </div>
+                  <div class="workspace-db-scroll">
+                    <table class="workspace-db-grid">
+                      <thead>
+                        <tr>
+                          ${databaseColumns
+                            .map((name) => `<th>${escapeHtml(name)}</th>`)
+                            .join("")}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${
+                          database.rows?.length
+                            ? database.rows
+                                .map(
+                                  (row) => `
+                                    <tr>
+                                      ${databaseColumns
+                                        .map(
+                                          (name) =>
+                                            `<td>${escapeHtml(
+                                              formatDatabaseCell(row?.[name]),
+                                            )}</td>`,
+                                        )
+                                        .join("")}
+                                    </tr>
+                                  `,
+                                )
+                                .join("")
+                            : `<tr><td colspan="${Math.max(databaseColumns.length, 1)}" class="workspace-db-empty-cell">No rows in this page.</td></tr>`
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                `
+                : '<div class="workspace-empty">Select a table or view to browse rows.</div>'
+            }
+          </div>
+        </div>
+      `;
     const body = selectedFile.loading
       ? '<div class="workspace-empty">Loading file…</div>'
       : selectedFile.error
         ? `<div class="workspace-empty workspace-error">${escapeHtml(selectedFile.error)}</div>`
+        : database
+          ? databaseBody
         : isImage
           ? `<div class="workspace-media-wrap"><img data-workdir-path="${escapeHtml(selectedFile.path)}" alt="${escapeHtml(selectedFile.path)}" /></div>`
           : isHtml && selectedFile.previewUrl
@@ -290,17 +484,50 @@ export function createFileTree({ rpcCall, appendSystem }) {
       if (!selectedFile.previewUrl) return;
       window.open(selectedFile.previewUrl, "_blank", "noopener");
     });
+    host.querySelectorAll("[data-db-table]").forEach((button) => {
+      button.addEventListener("click", () => {
+        void openDatabase(selectedFile.path, {
+          table: button.dataset.dbTable ?? "",
+          offset: 0,
+        });
+      });
+    });
+    host.querySelector("[data-db-prev]")?.addEventListener("click", () => {
+      void openDatabase(selectedFile.path, {
+        table: selectedFile.database?.selectedTable ?? "",
+        offset: Math.max(
+          0,
+          (selectedFile.database?.offset ?? 0) -
+            (selectedFile.database?.limit ?? DATABASE_PAGE_LIMIT),
+        ),
+      });
+    });
+    host.querySelector("[data-db-next]")?.addEventListener("click", () => {
+      void openDatabase(selectedFile.path, {
+        table: selectedFile.database?.selectedTable ?? "",
+        offset:
+          (selectedFile.database?.offset ?? 0) +
+          (selectedFile.database?.limit ?? DATABASE_PAGE_LIMIT),
+      });
+    });
+    host.querySelector("[data-db-refresh]")?.addEventListener("click", () => {
+      void openDatabase(selectedFile.path, {
+        table: selectedFile.database?.selectedTable ?? "",
+        offset: selectedFile.database?.offset ?? 0,
+      });
+    });
     hydrateWorkdirMedia(host);
   }
 
   async function openFile(path, options = {}) {
-    selectedFile = {
+    if (isDatabaseFile(path)) {
+      await openDatabase(path, options);
+      return;
+    }
+    selectedFile = createSelectedFile({
       path,
-      text: "",
       loading: true,
-      error: "",
-      previewUrl: "",
-    };
+    });
     renderTree();
     renderViewer();
     try {
@@ -311,7 +538,7 @@ export function createFileTree({ rpcCall, appendSystem }) {
         HTML_EXTENSIONS.has(fileExtension(path))
           ? await getWorkdirPreviewUrl(path).catch(() => "")
           : "";
-      selectedFile = {
+      selectedFile = createSelectedFile({
         path,
         text: isTextRenderable(path, text)
           ? text
@@ -319,17 +546,17 @@ export function createFileTree({ rpcCall, appendSystem }) {
         loading: false,
         error: "",
         previewUrl,
-      };
+      });
       renderTree();
       renderViewer();
     } catch (error) {
-      selectedFile = {
+      selectedFile = createSelectedFile({
         path,
         text: "",
         loading: false,
         error: error.message,
         previewUrl: "",
-      };
+      });
       renderViewer();
       if (!options.quiet) {
         appendSystem(`file preview failed: ${error.message}`, "error");
@@ -344,13 +571,7 @@ export function createFileTree({ rpcCall, appendSystem }) {
     if (!nextRoot) {
       activeRoot = "";
       treeCache.clear();
-      selectedFile = {
-        path: "",
-        text: "",
-        loading: false,
-        error: "",
-        previewUrl: "",
-      };
+      selectedFile = createSelectedFile();
       renderTree();
       renderViewer();
       setStatus("idle");
@@ -367,13 +588,7 @@ export function createFileTree({ rpcCall, appendSystem }) {
       treeCache.clear();
       expandedDirectories.clear();
       expandedDirectories.add(activeRoot);
-      selectedFile = {
-        path: "",
-        text: "",
-        loading: false,
-        error: "",
-        previewUrl: "",
-      };
+      selectedFile = createSelectedFile();
     }
     setStatus("loading");
     await ensureWatch(activeRoot).catch((error) => {

@@ -61,6 +61,7 @@ const GITHUB_API_ROOT = "https://api.github.com";
 const TERMINAL_REPLAY_RING_SIZE = 400;
 const SHARE_DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const SHARE_MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
+const DB_ROW_LIMIT = 50;
 
 const CHATGPT_ISSUER = (
   process.env.CODEX_CHATGPT_ISSUER ?? "https://auth.openai.com"
@@ -242,6 +243,37 @@ function hasValidPreviewSignature(session, filePath, expires, sig) {
     );
   } catch {
     return false;
+  }
+}
+
+function isSupportedDatabasePath(filePath) {
+  return [".db", ".db3", ".sqlite", ".sqlite3"].includes(
+    extname(String(filePath ?? "")).toLowerCase(),
+  );
+}
+
+function quoteSqlIdentifier(value) {
+  return `"${String(value ?? "").replace(/"/g, "\"\"")}"`;
+}
+
+async function runSqliteJson(filePath, sql) {
+  const result = await runProcess("sqlite3", ["-json", filePath, sql], {
+    timeoutMs: 10_000,
+  });
+  if (!result.ok) {
+    throw new Error(
+      truncateOutput(
+        result.stderr || result.stdout || "sqlite3 query failed",
+        2_000,
+      ),
+    );
+  }
+  const text = String(result.stdout ?? "").trim();
+  if (!text) return [];
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`sqlite3 returned unreadable JSON: ${error.message}`);
   }
 }
 
@@ -625,6 +657,101 @@ app.get("/api/whoami", (req, res) => {
     realBinaryConfigured: hasRealBackendConfigured(),
     workdir: session.workdir,
   });
+});
+
+app.get("/api/db/inspect", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const filePath = resolvePathWithinSession(
+    session,
+    String(req.query.path ?? ""),
+  );
+  if (!filePath || !existsSync(filePath)) {
+    res.status(404).json({ error: "database file not found" });
+    return;
+  }
+  if (!isSupportedDatabasePath(filePath)) {
+    res.status(400).json({ error: "only sqlite database files are supported" });
+    return;
+  }
+  try {
+    const tables = await runSqliteJson(
+      filePath,
+      `
+        SELECT
+          name,
+          type
+        FROM sqlite_master
+        WHERE type IN ('table', 'view')
+          AND name NOT LIKE 'sqlite_%'
+        ORDER BY name;
+      `,
+    );
+    res.json({
+      path: filePath,
+      dialect: "sqlite",
+      tables,
+    });
+  } catch (error) {
+    res.status(502).json({ error: error.message });
+  }
+});
+
+app.get("/api/db/table", sameOriginOnly, async (req, res) => {
+  const session = getOrCreateSession(req, res);
+  const filePath = resolvePathWithinSession(
+    session,
+    String(req.query.path ?? ""),
+  );
+  const table = String(req.query.table ?? "").trim();
+  const limit = Math.max(
+    1,
+    Math.min(
+      DB_ROW_LIMIT,
+      Number.parseInt(String(req.query.limit ?? DB_ROW_LIMIT), 10) ||
+        DB_ROW_LIMIT,
+    ),
+  );
+  const offset = Math.max(
+    0,
+    Number.parseInt(String(req.query.offset ?? "0"), 10) || 0,
+  );
+  if (!filePath || !existsSync(filePath)) {
+    res.status(404).json({ error: "database file not found" });
+    return;
+  }
+  if (!isSupportedDatabasePath(filePath)) {
+    res.status(400).json({ error: "only sqlite database files are supported" });
+    return;
+  }
+  if (!table) {
+    res.status(400).json({ error: "table name is required" });
+    return;
+  }
+  const quotedTable = quoteSqlIdentifier(table);
+  try {
+    const [columns, rows, counts] = await Promise.all([
+      runSqliteJson(filePath, `PRAGMA table_info(${quotedTable});`),
+      runSqliteJson(
+        filePath,
+        `SELECT * FROM ${quotedTable} LIMIT ${limit} OFFSET ${offset};`,
+      ),
+      runSqliteJson(
+        filePath,
+        `SELECT COUNT(*) AS totalRows FROM ${quotedTable};`,
+      ),
+    ]);
+    res.json({
+      path: filePath,
+      table,
+      limit,
+      offset,
+      columns,
+      rows,
+      totalRows: counts[0]?.totalRows ?? null,
+    });
+  } catch (error) {
+    res.status(502).json({ error: error.message });
+  }
 });
 
 app.post("/api/threads/:threadId/share", sameOriginOnly, (req, res) => {

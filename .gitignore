@@ -74,6 +74,11 @@ personal/
 .playwright-cli/
 attached_assets/
 web/.workdirs/
+web/projects/
+web/shares/
+web/output/
+web/test-results/
+web/playwright-report/
 
 # os
 .DS_Store
