@@ -594,7 +594,11 @@ export function createModals({
     if (!result?.steps?.length) {
       return '<div class="manager-empty">No ship run has started yet.</div>';
     }
+    const banner = result.tagCreated
+      ? `<div class="manager-note ship-tag-note">Tagged <code>${escapeHtml(result.tagCreated)}</code> and pushed to origin.</div>`
+      : "";
     return `
+      ${banner}
       <div class="manager-list">
         ${result.steps
           .map(
@@ -647,6 +651,18 @@ export function createModals({
         <input id="ship-deploy-after" type="checkbox" ${shipData.deploy?.configured ? "checked" : ""} ${shipData.deploy?.configured ? "" : "disabled"} />
         <span>Trigger the configured Render deploy after git push</span>
       </label>
+      <label class="hook-toggle ship-toggle">
+        <input id="ship-generate-changelog" type="checkbox" />
+        <span>Generate changelog from commits since last tag</span>
+      </label>
+      <label class="hook-toggle ship-toggle">
+        <input id="ship-create-tag" type="checkbox" />
+        <span>Create and push annotated git tag</span>
+      </label>
+      <div class="modal-row">
+        <label>Tag name (blank for auto <code>vYYYY.MM.DD</code>)</label>
+        <input id="ship-tag-name" placeholder="v2026.04.20" />
+      </div>
       <div class="manager-meta">Detection source: ${escapeHtml(shipData.commands?.source ?? "none")} · Git ${shipData.git?.connected ? "connected" : "not connected"} · Render ${shipData.deploy?.configured ? "configured" : "not configured"}</div>
       <div class="modal-actions modal-actions-left">
         <button id="ship-run" type="button" class="primary">Run Ship it</button>
@@ -952,6 +968,12 @@ export function createModals({
                     mount.querySelector("#ship-commit-message")?.value.trim() ?? "",
                   deployAfter:
                     mount.querySelector("#ship-deploy-after")?.checked ?? false,
+                  createTag:
+                    mount.querySelector("#ship-create-tag")?.checked ?? false,
+                  tagName:
+                    mount.querySelector("#ship-tag-name")?.value.trim() ?? "",
+                  generateChangelog:
+                    mount.querySelector("#ship-generate-changelog")?.checked ?? false,
                 }),
               });
               setFeedback(

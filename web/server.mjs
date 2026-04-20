@@ -1312,7 +1312,12 @@ app.post("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
   const buildCommand = String(req.body?.buildCommand ?? "").trim();
   const commitMessage = String(req.body?.commitMessage ?? "").trim();
   const deployAfter = req.body?.deployAfter !== false;
+  const createTag = Boolean(req.body?.createTag);
+  const requestedTagName = String(req.body?.tagName ?? "").trim();
+  const generateChangelog = Boolean(req.body?.generateChangelog);
   const steps = [];
+  let changelog = "";
+  let tagCreated = "";
 
   if (testsCommand) {
     const result = await runShell(testsCommand, { cwd: context.dir });
@@ -1410,6 +1415,132 @@ app.post("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
         return;
       }
     }
+
+    if (createTag || generateChangelog) {
+      const previousTagResult = await runProcess(
+        "git",
+        ["describe", "--tags", "--abbrev=0"],
+        {
+          cwd: context.dir,
+          env: { GIT_TERMINAL_PROMPT: "0" },
+        },
+      );
+      const previousTag = previousTagResult.ok
+        ? previousTagResult.stdout.trim()
+        : "";
+
+      if (generateChangelog) {
+        const rangeArg = previousTag ? `${previousTag}..HEAD` : "HEAD";
+        const logResult = await runProcess(
+          "git",
+          [
+            "log",
+            rangeArg,
+            "--pretty=format:* %s (%h)",
+            "--no-merges",
+          ],
+          {
+            cwd: context.dir,
+            env: { GIT_TERMINAL_PROMPT: "0" },
+          },
+        );
+        const entries = logResult.ok ? logResult.stdout.trim() : "";
+        const heading = previousTag
+          ? `Changes since ${previousTag}`
+          : "Changelog (full history)";
+        changelog = entries
+          ? `${heading}\n\n${entries}`
+          : `${heading}\n\n(no new commits)`;
+        steps.push({
+          name: "changelog",
+          command: `git log ${rangeArg} --pretty="* %s (%h)"`,
+          ok: true,
+          code: 0,
+          timedOut: false,
+          output: changelog,
+        });
+      }
+
+      if (createTag) {
+        let tagName = requestedTagName;
+        if (!tagName) {
+          const now = new Date();
+          const base = `v${now.getUTCFullYear()}.${String(
+            now.getUTCMonth() + 1,
+          ).padStart(2, "0")}.${String(now.getUTCDate()).padStart(2, "0")}`;
+          const existingResult = await runProcess(
+            "git",
+            ["tag", "--list", `${base}*`],
+            {
+              cwd: context.dir,
+              env: { GIT_TERMINAL_PROMPT: "0" },
+            },
+          );
+          const existing = existingResult.ok
+            ? existingResult.stdout.split(/\r?\n/).filter(Boolean)
+            : [];
+          let candidate = base;
+          let counter = 1;
+          while (existing.includes(candidate)) {
+            candidate = `${base}.${counter++}`;
+          }
+          tagName = candidate;
+        }
+
+        const tagMessage = changelog
+          ? changelog
+          : commitMessage || `Ship ${tagName}`;
+        const tagResult = await runProcess(
+          "git",
+          ["tag", "-a", tagName, "-m", tagMessage],
+          {
+            cwd: context.dir,
+            env: { GIT_TERMINAL_PROMPT: "0" },
+          },
+        );
+        steps.push(
+          summarizeStep(
+            "tag",
+            tagResult,
+            `git tag -a ${tagName} -m "..."`,
+          ),
+        );
+        if (!tagResult.ok) {
+          res.status(200).json({ ok: false, steps });
+          return;
+        }
+        tagCreated = tagName;
+
+        const remoteUrlResult = await runProcess(
+          "git",
+          ["remote", "get-url", "origin"],
+          {
+            cwd: context.dir,
+            env: { GIT_TERMINAL_PROMPT: "0" },
+          },
+        );
+        const tagPushResult = await runGit(
+          ["push", "origin", tagName],
+          {
+            cwd: context.dir,
+            slug,
+            repoHint: remoteUrlResult.ok ? remoteUrlResult.stdout.trim() : "",
+            timeoutMs: 10 * 60 * 1000,
+          },
+        );
+        steps.push(
+          summarizeStep(
+            "tag push",
+            tagPushResult,
+            `git push origin ${tagName}`,
+          ),
+        );
+        if (!tagPushResult.ok) {
+          res.status(200).json({ ok: false, steps });
+          return;
+        }
+      }
+    }
   }
 
   if (deployAfter) {
@@ -1444,6 +1575,8 @@ app.post("/api/projects/:slug/ship", sameOriginOnly, async (req, res) => {
   res.json({
     ok: true,
     steps,
+    tagCreated,
+    changelog,
     git: await getProjectGitStatus(context.dir, slug),
     deploy: loadRenderDeployState(slug),
   });
