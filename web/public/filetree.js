@@ -283,7 +283,12 @@ export function createFileTree({ rpcCall, appendSystem }) {
   function renderTreeBranch(dir, depth) {
     const entries = treeCache.get(dir) ?? [];
     if (!entries.length && depth === 0) {
-      return '<div class="workspace-empty">This workspace is empty.</div>';
+      return `
+        <div class="workspace-empty workspace-empty-rich">
+          <div class="workspace-empty-title">This workspace is empty</div>
+          <p>Drop files into the composer, or ask Codex to scaffold a project. New files will stream in here live as they are created.</p>
+        </div>
+      `;
     }
     return entries
       .map((entry) => {
@@ -317,14 +322,38 @@ export function createFileTree({ rpcCall, appendSystem }) {
     const host = $("#workspace-files");
     if (!host) return;
     if (!activeRoot) {
-      host.innerHTML =
-        '<div class="workspace-empty">Connect to a live workspace to browse files.</div>';
+      host.innerHTML = `
+        <div class="workspace-empty workspace-empty-rich">
+          <div class="workspace-empty-title">No workspace attached yet</div>
+          <p>Ask Codex to open a repo or switch to a project from the sidebar, and its files will appear here for quick browsing, preview, and upload.</p>
+          <p class="workspace-empty-hint">Tip: type <kbd>@</kbd> in the composer to attach files by path without leaving the keyboard.</p>
+        </div>
+      `;
       return;
     }
     host.innerHTML = `
       <div class="workspace-section-title">Workspace files</div>
-      <div class="workspace-tree">${renderTreeBranch(activeRoot, 0)}</div>
+      <div class="workspace-tree" role="tree">${renderTreeBranch(activeRoot, 0)}</div>
     `;
+    // Mark the first row tab-reachable so keyboard users can enter the tree
+    // with a single Tab; the rest participate via roving tabindex.
+    const rows = Array.from(host.querySelectorAll(".workspace-row"));
+    rows.forEach((row, index) => {
+      row.setAttribute("role", "treeitem");
+      row.setAttribute("tabindex", index === 0 ? "0" : "-1");
+      if (row.dataset.kind === "directory") {
+        row.setAttribute(
+          "aria-expanded",
+          expandedDirectories.has(row.dataset.path ?? "") ? "true" : "false",
+        );
+      }
+    });
+    const focusRow = (row) => {
+      if (!row) return;
+      rows.forEach((other) => other.setAttribute("tabindex", "-1"));
+      row.setAttribute("tabindex", "0");
+      row.focus();
+    };
     host.querySelectorAll(".workspace-row").forEach((button) => {
       button.addEventListener("click", async () => {
         const path = button.dataset.path ?? "";
@@ -349,6 +378,88 @@ export function createFileTree({ rpcCall, appendSystem }) {
         }
         await openFile(path);
       });
+      button.addEventListener("keydown", async (event) => {
+        const path = button.dataset.path ?? "";
+        if (!path) return;
+        const kind = button.dataset.kind;
+        const currentRows = Array.from(host.querySelectorAll(".workspace-row"));
+        const index = currentRows.indexOf(button);
+        switch (event.key) {
+          case "ArrowDown": {
+            event.preventDefault();
+            focusRow(currentRows[Math.min(currentRows.length - 1, index + 1)]);
+            return;
+          }
+          case "ArrowUp": {
+            event.preventDefault();
+            focusRow(currentRows[Math.max(0, index - 1)]);
+            return;
+          }
+          case "Home": {
+            event.preventDefault();
+            focusRow(currentRows[0]);
+            return;
+          }
+          case "End": {
+            event.preventDefault();
+            focusRow(currentRows[currentRows.length - 1]);
+            return;
+          }
+          case "ArrowRight": {
+            if (kind !== "directory") return;
+            event.preventDefault();
+            if (!expandedDirectories.has(path)) {
+              expandedDirectories.add(path);
+              renderTree();
+              await loadDirectory(path).catch((error) => {
+                expandedDirectories.delete(path);
+                appendSystem(
+                  `file tree load failed: ${error.message}`,
+                  "error",
+                );
+              });
+              renderTree();
+              // Re-focus the same row by path after the re-render.
+              focusRow(
+                $(`#workspace-files .workspace-row[data-path="${CSS.escape(path)}"]`),
+              );
+            } else {
+              // Already expanded: jump to the first child if any.
+              const next = currentRows[index + 1];
+              if (next) focusRow(next);
+            }
+            return;
+          }
+          case "ArrowLeft": {
+            event.preventDefault();
+            if (kind === "directory" && expandedDirectories.has(path)) {
+              expandedDirectories.delete(path);
+              renderTree();
+              focusRow(
+                $(`#workspace-files .workspace-row[data-path="${CSS.escape(path)}"]`),
+              );
+              return;
+            }
+            // Collapsed or a file: move focus to the parent directory row.
+            const parentDir = parentPath(path);
+            if (parentDir && parentDir !== path) {
+              const parentRow = host.querySelector(
+                `.workspace-row[data-path="${CSS.escape(parentDir)}"]`,
+              );
+              if (parentRow) focusRow(parentRow);
+            }
+            return;
+          }
+          case "Enter":
+          case " ": {
+            event.preventDefault();
+            button.click();
+            return;
+          }
+          default:
+            return;
+        }
+      });
     });
   }
 
@@ -357,8 +468,10 @@ export function createFileTree({ rpcCall, appendSystem }) {
     if (!host) return;
     if (!selectedFile.path) {
       host.innerHTML = `
-        <div class="workspace-empty">
-          Select a file from the workspace tree to preview it here.
+        <div class="workspace-empty workspace-empty-rich">
+          <div class="workspace-empty-title">Nothing selected</div>
+          <p>Pick a file in the tree on the left to preview its contents. Text files render inline; images, HTML, markdown, and SQLite databases get dedicated previews.</p>
+          <p class="workspace-empty-hint">Keyboard: <kbd>↑</kbd> <kbd>↓</kbd> navigate, <kbd>→</kbd> expand, <kbd>←</kbd> collapse, <kbd>Enter</kbd> open.</p>
         </div>
       `;
       return;

@@ -30,17 +30,110 @@ export function createModals({
   const threadMemoryModes = load("threadMemoryModes", {});
   let nextHookRowId = 1;
 
+  let activeModalCleanup = null;
+
+  function focusableElementsIn(root) {
+    if (!root) return [];
+    return Array.from(
+      root.querySelectorAll(
+        "a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type='hidden']), select:not([disabled]), [tabindex]:not([tabindex='-1'])",
+      ),
+    ).filter((node) => {
+      if (node.hidden) return false;
+      if (node.getAttribute("aria-hidden") === "true") return false;
+      // offsetParent is null for display:none subtrees (covers most hidden
+      // ancestors); fall back to a bbox check for fixed-position exceptions.
+      if (node.offsetParent !== null) return true;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
+  }
+
   function modal(html, onMount, options = {}) {
     const root = $("#modal-root");
     const className = options.className ? ` ${options.className}` : "";
-    root.innerHTML = `<div class="modal-backdrop"><div class="modal${className}">${html}</div></div>`;
-    root.querySelector(".modal-backdrop").addEventListener("click", (event) => {
+    const ariaLabelledBy = options.titleId
+      ? ` aria-labelledby="${options.titleId}"`
+      : "";
+    const ariaLabel =
+      !options.titleId && options.ariaLabel
+        ? ` aria-label="${escapeHtml(options.ariaLabel)}"`
+        : "";
+    root.innerHTML = `<div class="modal-backdrop"><div class="modal${className}" role="dialog" aria-modal="true" tabindex="-1"${ariaLabelledBy}${ariaLabel}>${html}</div></div>`;
+    const backdrop = root.querySelector(".modal-backdrop");
+    const dialog = root.querySelector(".modal");
+    backdrop.addEventListener("click", (event) => {
       if (event.target.classList.contains("modal-backdrop")) closeModal();
     });
-    if (onMount) onMount(root.querySelector(".modal"));
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const onKeydown = (event) => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        closeModal();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusables = focusableElementsIn(dialog);
+      if (!focusables.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (!dialog.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeydown);
+    // Tear down any stale listener before installing the new cleanup.
+    if (activeModalCleanup) {
+      try {
+        activeModalCleanup();
+      } catch {
+        // non-fatal
+      }
+    }
+    activeModalCleanup = () => {
+      document.removeEventListener("keydown", onKeydown);
+      if (previousFocus && typeof previousFocus.focus === "function") {
+        try {
+          previousFocus.focus({ preventScroll: true });
+        } catch {
+          // non-fatal
+        }
+      }
+    };
+    if (onMount) onMount(dialog);
+    // If onMount didn't move focus into the modal, seed it with the first
+    // focusable element (or the dialog root itself) so keyboard users start
+    // inside the trap rather than on whatever was focused before.
+    if (!dialog.contains(document.activeElement)) {
+      const focusables = focusableElementsIn(dialog);
+      (focusables[0] ?? dialog).focus({ preventScroll: true });
+    }
   }
 
   function closeModal() {
+    if (activeModalCleanup) {
+      try {
+        activeModalCleanup();
+      } catch {
+        // non-fatal
+      }
+      activeModalCleanup = null;
+    }
     $("#modal-root").innerHTML = "";
   }
 
@@ -3139,9 +3232,20 @@ export function createModals({
       }[focus] ?? "model";
     modal(
       `
-      <h2>Settings</h2>
+      <h2 id="settings-title">Settings</h2>
       <p>Live session controls plus advanced raw config inspection for the full schema.</p>
-      <div class="settings-tabs">
+      <div class="settings-search-row">
+        <input
+          id="settings-search"
+          type="search"
+          placeholder="Search settings…"
+          aria-label="Search settings"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <span id="settings-search-empty" class="settings-search-empty" hidden>No settings match your search.</span>
+      </div>
+      <div class="settings-tabs" role="tablist" aria-label="Settings sections">
         ${tabs.map(([name, label]) => settingsTabButton(name, label, name === tabForFocus)).join("")}
       </div>
       ${panel(
@@ -3426,6 +3530,44 @@ export function createModals({
         mount.querySelectorAll(".settings-tab").forEach((node) => {
           node.addEventListener("click", () => setTab(node.dataset.tab));
         });
+
+        // Live search across tabs: show any tab whose label or panel body
+        // contains the query; the first matching tab is auto-activated so the
+        // user sees results without an extra click.
+        const searchInput = mount.querySelector("#settings-search");
+        const emptyHint = mount.querySelector("#settings-search-empty");
+        const applySettingsSearch = (rawQuery) => {
+          const query = rawQuery.trim().toLowerCase();
+          const tabsByName = new Map();
+          mount.querySelectorAll(".settings-tab").forEach((tab) => {
+            tabsByName.set(tab.dataset.tab, tab);
+          });
+          let firstVisibleTab = null;
+          let anyMatch = false;
+          mount.querySelectorAll(".settings-panel").forEach((panel) => {
+            const tab = tabsByName.get(panel.dataset.panel);
+            const haystack = (
+              `${tab?.textContent ?? ""} ${panel.textContent ?? ""}`
+            ).toLowerCase();
+            const matches = !query || haystack.includes(query);
+            if (tab) tab.hidden = !matches;
+            if (matches) {
+              if (!firstVisibleTab) firstVisibleTab = panel.dataset.panel;
+              anyMatch = true;
+            }
+          });
+          if (emptyHint) emptyHint.hidden = anyMatch;
+          if (query && firstVisibleTab) {
+            setTab(firstVisibleTab);
+          } else if (!query) {
+            // Restore the originally focused tab when search clears.
+            setTab(tabForFocus);
+          }
+        };
+        searchInput?.addEventListener("input", (event) => {
+          applySettingsSearch(event.target.value ?? "");
+        });
+
         mount.querySelector("#cancel").addEventListener("click", closeModal);
         mount.querySelector("#open-mcp")?.addEventListener("click", () => {
           closeModal();
@@ -3663,6 +3805,7 @@ export function createModals({
           closeModal();
         });
       },
+      { titleId: "settings-title" },
     );
   }
 

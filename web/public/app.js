@@ -1403,46 +1403,88 @@ function fuzzyScore(query, text) {
   return 1;
 }
 
-function renderPaletteList(mount, actions, query, selectedIndex) {
+function renderPaletteList(mount, actions, query, selectedIndex, recentIds = []) {
   const list = mount.querySelector("#palette-list");
   if (!list) return;
-  const scored = actions
-    .map((action) => ({
-      action,
-      score: Math.max(
-        fuzzyScore(query, action.label),
-        fuzzyScore(query, action.hint ?? ""),
-        fuzzyScore(query, action.group ?? ""),
-      ),
-    }))
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 40);
-  if (scored.length === 0) {
-    list.innerHTML = '<div class="palette-empty">No matches</div>';
+  const trimmed = (query ?? "").trim();
+  const actionsById = new Map(actions.map((action) => [action.id, action]));
+  let entries;
+  let recentStart = -1;
+  let recentEnd = -1;
+  if (!trimmed) {
+    const recentActions = recentIds
+      .map((id) => actionsById.get(id))
+      .filter(Boolean);
+    const recentSet = new Set(recentActions.map((action) => action.id));
+    const others = actions.filter((action) => !recentSet.has(action.id));
+    entries = [...recentActions, ...others].slice(0, 40);
+    if (recentActions.length) {
+      recentStart = 0;
+      recentEnd = recentActions.length - 1;
+    }
+  } else {
+    entries = actions
+      .map((action) => ({
+        action,
+        score: Math.max(
+          fuzzyScore(trimmed, action.label),
+          fuzzyScore(trimmed, action.hint ?? ""),
+          fuzzyScore(trimmed, action.group ?? ""),
+        ),
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 40)
+      .map((entry) => entry.action);
+  }
+  if (entries.length === 0) {
+    list.innerHTML = `
+      <div class="palette-empty">
+        <div class="palette-empty-title">No matches</div>
+        <div class="palette-empty-hint">Try a shorter query or a different word. <kbd>Esc</kbd> to close.</div>
+      </div>
+    `;
+    list.dataset.matchCount = "0";
+    list.dataset.selectedIndex = "0";
     return;
   }
   const normalizedIndex =
-    ((selectedIndex % scored.length) + scored.length) % scored.length;
-  list.innerHTML = scored
-    .map(
-      (entry, index) => `
-        <button
-          type="button"
-          class="palette-item${index === normalizedIndex ? " active" : ""}"
-          data-action-id="${entry.action.id}"
-        >
-          <div class="palette-item-main">
-            <span class="palette-item-label">${escapeHtmlPalette(entry.action.label)}</span>
-            <span class="palette-item-hint">${escapeHtmlPalette(entry.action.hint ?? "")}</span>
-          </div>
-          <span class="palette-item-group">${escapeHtmlPalette(entry.action.group ?? "")}</span>
-        </button>
-      `,
-    )
-    .join("");
-  list.dataset.matchCount = String(scored.length);
+    ((selectedIndex % entries.length) + entries.length) % entries.length;
+  const parts = [];
+  if (recentStart !== -1) {
+    parts.push('<div class="palette-section-head">Recent</div>');
+  }
+  entries.forEach((action, index) => {
+    if (
+      recentEnd !== -1 &&
+      index === recentEnd + 1 &&
+      entries.length > recentEnd + 1
+    ) {
+      parts.push('<div class="palette-section-head">All commands</div>');
+    }
+    parts.push(`
+      <button
+        type="button"
+        role="option"
+        aria-selected="${index === normalizedIndex ? "true" : "false"}"
+        class="palette-item${index === normalizedIndex ? " active" : ""}"
+        data-action-id="${action.id}"
+      >
+        <div class="palette-item-main">
+          <span class="palette-item-label">${escapeHtmlPalette(action.label)}</span>
+          <span class="palette-item-hint">${escapeHtmlPalette(action.hint ?? "")}</span>
+        </div>
+        <span class="palette-item-group">${escapeHtmlPalette(action.group ?? "")}</span>
+      </button>
+    `);
+  });
+  list.innerHTML = parts.join("");
+  list.dataset.matchCount = String(entries.length);
   list.dataset.selectedIndex = String(normalizedIndex);
+  const activeItem = list.querySelector(".palette-item.active");
+  if (activeItem) {
+    activeItem.scrollIntoView({ block: "nearest" });
+  }
 }
 
 function escapeHtmlPalette(value) {
@@ -1453,13 +1495,42 @@ function escapeHtmlPalette(value) {
     .replace(/"/g, "&quot;");
 }
 
+const PALETTE_RECENTS_KEY = "paletteRecentActionIds";
+const PALETTE_RECENTS_MAX = 6;
+
+function readPaletteRecents() {
+  try {
+    const raw = localStorage.getItem(PALETTE_RECENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value) => typeof value === "string");
+  } catch {
+    return [];
+  }
+}
+
+function recordPaletteRecent(actionId) {
+  if (!actionId) return;
+  try {
+    const recents = readPaletteRecents().filter((id) => id !== actionId);
+    recents.unshift(actionId);
+    localStorage.setItem(
+      PALETTE_RECENTS_KEY,
+      JSON.stringify(recents.slice(0, PALETTE_RECENTS_MAX)),
+    );
+  } catch {
+    // non-fatal — MRU is a nice-to-have
+  }
+}
+
 function openCommandPalette() {
   const actions = buildPaletteActions();
   const root = $("#modal-root");
   if (!root) return;
   root.innerHTML = `
     <div class="modal-backdrop">
-      <div class="modal palette-modal" role="dialog" aria-label="Command palette">
+      <div class="modal palette-modal" role="dialog" aria-modal="true" aria-label="Command palette">
         <input
           id="palette-input"
           type="text"
@@ -1467,12 +1538,16 @@ function openCommandPalette() {
           placeholder="Type a command or action…"
           autocomplete="off"
           spellcheck="false"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="palette-list"
+          aria-autocomplete="list"
         />
-        <div id="palette-list" class="palette-list"></div>
+        <div id="palette-list" class="palette-list" role="listbox" aria-label="Matching commands"></div>
         <div class="palette-footer">
-          <span>↑↓ navigate</span>
-          <span>↵ run</span>
-          <span>esc close</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span><kbd>↵</kbd> run</span>
+          <span><kbd>Esc</kbd> close</span>
         </div>
       </div>
     </div>
@@ -1481,19 +1556,26 @@ function openCommandPalette() {
   const mount = root.querySelector(".palette-modal");
   const input = root.querySelector("#palette-input");
   const list = root.querySelector("#palette-list");
+  const previousFocus =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
   let query = "";
   let selectedIndex = 0;
 
   const close = () => {
     root.innerHTML = "";
+    if (previousFocus && typeof previousFocus.focus === "function") {
+      try {
+        previousFocus.focus({ preventScroll: true });
+      } catch {}
+    }
   };
 
-  const execSelected = () => {
-    const selected = list.querySelector(".palette-item.active");
-    if (!selected) return;
-    const id = selected.dataset.actionId;
+  const runAction = (id) => {
     const action = actions.find((entry) => entry.id === id);
     if (!action) return;
+    recordPaletteRecent(id);
     close();
     try {
       action.run();
@@ -1505,6 +1587,27 @@ function openCommandPalette() {
     }
   };
 
+  const execSelected = () => {
+    const selected = list.querySelector(".palette-item.active");
+    if (!selected) return;
+    runAction(selected.dataset.actionId);
+  };
+
+  const updateAriaActiveDescendant = () => {
+    const active = list.querySelector(".palette-item.active");
+    if (active) {
+      if (!active.id) active.id = `palette-item-${active.dataset.actionId}`;
+      input.setAttribute("aria-activedescendant", active.id);
+    } else {
+      input.removeAttribute("aria-activedescendant");
+    }
+  };
+
+  const rerender = () => {
+    renderPaletteList(mount, actions, query, selectedIndex, readPaletteRecents());
+    updateAriaActiveDescendant();
+  };
+
   backdrop.addEventListener("click", (event) => {
     if (event.target === backdrop) close();
   });
@@ -1512,7 +1615,7 @@ function openCommandPalette() {
   input.addEventListener("input", () => {
     query = input.value;
     selectedIndex = 0;
-    renderPaletteList(mount, actions, query, selectedIndex);
+    rerender();
   });
 
   input.addEventListener("keydown", (event) => {
@@ -1531,32 +1634,29 @@ function openCommandPalette() {
     if (event.key === "ArrowDown") {
       event.preventDefault();
       selectedIndex = (selectedIndex + 1) % matchCount;
-      renderPaletteList(mount, actions, query, selectedIndex);
+      rerender();
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       selectedIndex = (selectedIndex - 1 + matchCount) % matchCount;
-      renderPaletteList(mount, actions, query, selectedIndex);
+      rerender();
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      selectedIndex = 0;
+      rerender();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      selectedIndex = matchCount - 1;
+      rerender();
     }
   });
 
   list.addEventListener("click", (event) => {
     const target = event.target.closest(".palette-item");
     if (!target) return;
-    const id = target.dataset.actionId;
-    const action = actions.find((entry) => entry.id === id);
-    if (!action) return;
-    close();
-    try {
-      action.run();
-    } catch (error) {
-      renderers.appendSystem(
-        `command failed: ${error.message ?? error}`,
-        "error",
-      );
-    }
+    runAction(target.dataset.actionId);
   });
 
-  renderPaletteList(mount, actions, query, selectedIndex);
+  rerender();
   setTimeout(() => input.focus(), 10);
 }
 
