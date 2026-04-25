@@ -6,11 +6,11 @@ This file is a curated helper. Every recommendation here must be verified agains
 
 | Model ID | Use for |
 | --- | --- |
-| `gpt-5.4` | Default text plus reasoning for most new apps |
-| `gpt-5.4-pro` | Only when the user explicitly asks for maximum reasoning or quality; substantially slower and more expensive |
+| `gpt-5.5` | Default text plus reasoning for most new apps |
+| `gpt-5.5-pro` | Only when the user explicitly asks for maximum reasoning or quality; substantially slower and more expensive |
 | `gpt-5-mini` | Cheaper and faster reasoning with good quality |
 | `gpt-5-nano` | High-throughput simple tasks and classification |
-| `gpt-5.4` | Explicit no-reasoning text path via `reasoning.effort: none` |
+| `gpt-5.5` | Explicit no-reasoning text path via `reasoning.effort: none` |
 | `gpt-4.1-mini` | Cheaper no-reasoning text |
 | `gpt-4.1-nano` | Fastest and cheapest no-reasoning text |
 | `gpt-5.3-codex` | Agentic coding, code editing, and tool-heavy coding workflows |

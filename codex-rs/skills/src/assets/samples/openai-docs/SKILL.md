@@ -1,19 +1,19 @@
 ---
 name: "openai-docs"
-description: "Use when the user asks how to build with OpenAI products or APIs and needs up-to-date official documentation with citations, help choosing the latest model for a use case, or explicit GPT-5.4 upgrade and prompt-upgrade guidance; prioritize OpenAI docs MCP tools, use bundled references only as helper context, and restrict any fallback browsing to official OpenAI domains."
+description: "Use when the user asks how to build with OpenAI products or APIs and needs up-to-date official documentation with citations, help choosing the latest model for a use case, or explicit GPT-5.5 upgrade and prompt-upgrade guidance; prioritize OpenAI docs MCP tools, use bundled references only as helper context, and restrict any fallback browsing to official OpenAI domains."
 ---
 
 
 # OpenAI Docs
 
-Provide authoritative, current guidance from OpenAI developer docs using the developers.openai.com MCP server. Always prioritize the developer docs MCP tools over web.run for OpenAI-related questions. This skill may also load targeted files from `references/` for model-selection and GPT-5.4-specific requests, but current OpenAI docs remain authoritative. Only if the MCP server is installed and returns no meaningful results should you fall back to web search.
+Provide authoritative, current guidance from OpenAI developer docs using the developers.openai.com MCP server. Always prioritize the developer docs MCP tools over web.run for OpenAI-related questions. This skill may also load targeted files from `references/` for model-selection and GPT-5.5-specific requests, but current OpenAI docs remain authoritative. Only if the MCP server is installed and returns no meaningful results should you fall back to web search.
 
 ## Quick start
 
 - Use `mcp__openaiDeveloperDocs__search_openai_docs` to find the most relevant doc pages.
 - Use `mcp__openaiDeveloperDocs__fetch_openai_doc` to pull exact sections and quote/paraphrase accurately.
 - Use `mcp__openaiDeveloperDocs__list_openai_docs` only when you need to browse or discover pages without a clear query.
-- Load only the relevant file from `references/` when the question is about model selection or a GPT-5.4 upgrade.
+- Load only the relevant file from `references/` when the question is about model selection or a GPT-5.5 upgrade.
 
 ## OpenAI product snapshots
 
@@ -37,13 +37,13 @@ If MCP tools fail or no OpenAI docs resources are available:
 
 ## Workflow
 
-1. Clarify the product scope and whether the request is general docs lookup, model selection, a GPT-5.4 upgrade, or a GPT-5.4 prompt upgrade.
+1. Clarify the product scope and whether the request is general docs lookup, model selection, a GPT-5.5 upgrade, or a GPT-5.5 prompt upgrade.
 2. If it is a model-selection request, load `references/latest-model.md`.
-3. If it is an explicit GPT-5.4 upgrade request, load `references/upgrading-to-gpt-5p4.md`.
-4. If the upgrade may require prompt changes, or the workflow is research-heavy, tool-heavy, coding-oriented, multi-agent, or long-running, also load `references/gpt-5p4-prompting-guide.md`.
+3. If it is an explicit GPT-5.5 upgrade request, load `references/upgrading-to-gpt-5p5.md`.
+4. If the upgrade may require prompt changes, or the workflow is research-heavy, tool-heavy, coding-oriented, multi-agent, or long-running, also load `references/gpt-5p5-prompting-guide.md`.
 5. Search docs with a precise query.
 6. Fetch the best page and the exact section needed (use `anchor` when possible).
-7. For GPT-5.4 upgrade reviews, always make the per-usage-site output explicit: target model, starting reasoning recommendation, `phase` assessment when relevant, prompt blocks, and compatibility status.
+7. For GPT-5.5 upgrade reviews, always make the per-usage-site output explicit: target model, starting reasoning recommendation, `phase` assessment when relevant, prompt blocks, and compatibility status.
 8. Answer with concise guidance and cite the doc source, using the reference files only as helper context.
 
 ## Reference map
@@ -51,8 +51,8 @@ If MCP tools fail or no OpenAI docs resources are available:
 Read only what you need:
 
 - `references/latest-model.md` -> model-selection and "best/latest/current model" questions; verify every recommendation against current OpenAI docs before answering.
-- `references/upgrading-to-gpt-5p4.md` -> only for explicit GPT-5.4 upgrade and upgrade-planning requests; verify the checklist and compatibility guidance against current OpenAI docs before answering.
-- `references/gpt-5p4-prompting-guide.md` -> prompt rewrites and prompt-behavior upgrades for GPT-5.4; verify prompting guidance against current OpenAI docs before answering.
+- `references/upgrading-to-gpt-5p5.md` -> only for explicit GPT-5.5 upgrade and upgrade-planning requests; verify the checklist and compatibility guidance against current OpenAI docs before answering.
+- `references/gpt-5p5-prompting-guide.md` -> prompt rewrites and prompt-behavior upgrades for GPT-5.5; verify prompting guidance against current OpenAI docs before answering.
 
 ## Quality rules
 

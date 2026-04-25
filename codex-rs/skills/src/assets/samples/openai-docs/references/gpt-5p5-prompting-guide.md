@@ -1,6 +1,6 @@
-# GPT-5.4 prompting upgrade guide
+# GPT-5.5 prompting upgrade guide
 
-Use this guide when prompts written for older models need to be adapted for GPT-5.4 during an upgrade. Start lean: keep the model-string change narrow, preserve the original task intent, and add only the smallest prompt changes needed to recover behavior.
+Use this guide when prompts written for older models need to be adapted for GPT-5.5 during an upgrade. Start lean: keep the model-string change narrow, preserve the original task intent, and add only the smallest prompt changes needed to recover behavior.
 
 ## Default upgrade posture
 
@@ -14,7 +14,7 @@ Use this guide when prompts written for older models need to be adapted for GPT-
 
 ## Behavioral differences to account for
 
-Current GPT-5.4 upgrade guidance suggests these strengths:
+Current GPT-5.5 upgrade guidance suggests these strengths:
 
 - stronger personality and tone adherence, with less drift over long answers
 - better long-horizon and agentic workflow stamina
@@ -35,17 +35,17 @@ Start with the smallest set of instructions that preserves correctness. Add the 
 
 ## Prompt rewrite patterns
 
-| Older prompt pattern | GPT-5.4 adjustment | Why | Example addition |
+| Older prompt pattern | GPT-5.5 adjustment | Why | Example addition |
 | --- | --- | --- | --- |
-| Long, repetitive instructions that compensate for weaker instruction following | Remove duplicate scaffolding and keep only the constraints that materially change behavior | GPT-5.4 usually needs less repeated steering | Replace repeated reminders with one concise rule plus a verification block |
+| Long, repetitive instructions that compensate for weaker instruction following | Remove duplicate scaffolding and keep only the constraints that materially change behavior | GPT-5.5 usually needs less repeated steering | Replace repeated reminders with one concise rule plus a verification block |
 | Fast assistant prompt with no verbosity control | Keep the prompt as-is first; add a verbosity clamp only if outputs become too long | Many GPT-4o or GPT-4.1 upgrades work with just a model-string swap | Add `output_verbosity_spec` only after a verbosity regression |
-| Tool-heavy agent prompt that assumes the model will keep searching until complete | Add persistence and verification rules | GPT-5.4 may use fewer tool calls by default for efficiency | Add `tool_persistence_rules` and `verification_loop` |
-| Tool-heavy workflow where later actions depend on earlier lookup or retrieval | Add prerequisite and missing-context rules before action steps | GPT-5.4 benefits from explicit dependency-aware routing when context is still thin | Add `dependency_checks` and `missing_context_gating` |
-| Retrieval workflow with several independent lookups | Add selective parallelism guidance | GPT-5.4 is strong at parallel tool use, but should not parallelize dependent steps | Add `parallel_tool_calling` |
+| Tool-heavy agent prompt that assumes the model will keep searching until complete | Add persistence and verification rules | GPT-5.5 may use fewer tool calls by default for efficiency | Add `tool_persistence_rules` and `verification_loop` |
+| Tool-heavy workflow where later actions depend on earlier lookup or retrieval | Add prerequisite and missing-context rules before action steps | GPT-5.5 benefits from explicit dependency-aware routing when context is still thin | Add `dependency_checks` and `missing_context_gating` |
+| Retrieval workflow with several independent lookups | Add selective parallelism guidance | GPT-5.5 is strong at parallel tool use, but should not parallelize dependent steps | Add `parallel_tool_calling` |
 | Batch workflow prompt that often misses items | Add an explicit completeness contract | Item accounting benefits from direct instruction | Add `completeness_contract` |
 | Research prompt that needs grounding and citation discipline | Add research, citation, and empty-result recovery blocks | Multi-pass retrieval is stronger when the model is told how to react to weak or empty search results | Add `research_mode`, `citation_rules`, and `empty_result_handling`; add `tool_persistence_rules` when retrieval tools are already in use |
 | Coding or terminal prompt with shell misuse or early stop failures | Keep the same tool surface and add terminal hygiene and verification instructions | Tool-using coding workflows are not blocked just because tools exist; they usually need better prompt steering, not host rewiring | Add `terminal_tool_hygiene` and `verification_loop`, optionally `tool_persistence_rules` |
-| Multi-agent or support-triage workflow with escalation or completeness requirements | Add one lightweight control block for persistence, completeness, or verification | GPT-5.4 can be more efficient by default, so multi-step support flows benefit from an explicit completion or verification contract | Add at least one of `tool_persistence_rules`, `completeness_contract`, or `verification_loop` |
+| Multi-agent or support-triage workflow with escalation or completeness requirements | Add one lightweight control block for persistence, completeness, or verification | GPT-5.5 can be more efficient by default, so multi-step support flows benefit from an explicit completion or verification contract | Add at least one of `tool_persistence_rules`, `completeness_contract`, or `verification_loop` |
 
 ## Prompt blocks
 
@@ -361,33 +361,33 @@ For long-running Responses workflows, preambles, or tool-heavy agents that repla
 
 - If the host already round-trips `phase`, keep it intact during the upgrade.
 - If the host uses `previous_response_id` and does not manually replay assistant items, note that this may reduce manual `phase` handling needs.
-- If reliable GPT-5.4 behavior would require adding or preserving `phase` and that would need code edits, treat the case as blocked for prompt-only or model-string-only migration guidance.
+- If reliable GPT-5.5 behavior would require adding or preserving `phase` and that would need code edits, treat the case as blocked for prompt-only or model-string-only migration guidance.
 
 ## Example upgrade profiles
 
 ### GPT-5.2
 
-- Use `gpt-5.4`
+- Use `gpt-5.5`
 - Match the current reasoning effort first
 - Preserve the existing latency and quality profile before tuning prompt blocks
 - If the repo does not expose the exact setting, emit `same` as the starting recommendation
 
 ### GPT-5.3-Codex
 
-- Use `gpt-5.4`
+- Use `gpt-5.5`
 - Match the current reasoning effort first
 - If you need Codex-style speed and efficiency, add verification blocks before increasing reasoning effort
 - If the repo does not expose the exact setting, emit `same` as the starting recommendation
 
 ### GPT-4o or GPT-4.1 assistant
 
-- Use `gpt-5.4`
+- Use `gpt-5.5`
 - Start with `none` reasoning effort
 - Add `output_verbosity_spec` only if output becomes too verbose
 
 ### Long-horizon agent
 
-- Use `gpt-5.4`
+- Use `gpt-5.5`
 - Start with `medium` reasoning effort
 - Add `tool_persistence_rules`
 - Add `completeness_contract`
@@ -395,7 +395,7 @@ For long-running Responses workflows, preambles, or tool-heavy agents that repla
 
 ### Research workflow
 
-- Use `gpt-5.4`
+- Use `gpt-5.5`
 - Start with `medium` reasoning effort
 - Add `research_mode`
 - Add `citation_rules`
@@ -405,14 +405,14 @@ For long-running Responses workflows, preambles, or tool-heavy agents that repla
 
 ### Support triage or multi-agent workflow
 
-- Use `gpt-5.4`
+- Use `gpt-5.5`
 - Prefer `model string + light prompt rewrite` over `model string only`
 - Add at least one of `tool_persistence_rules`, `completeness_contract`, or `verification_loop`
 - Add more only if evals show a real regression
 
 ### Coding or terminal workflow
 
-- Use `gpt-5.4`
+- Use `gpt-5.5`
 - Keep the model-string change narrow
 - Match the current reasoning effort first if you are upgrading from GPT-5.3-Codex
 - Add `terminal_tool_hygiene`
