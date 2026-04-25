@@ -78,6 +78,11 @@ const PREFERRED_MODELS = [
 ];
 
 export const LEGACY_DEFAULT_MODEL_IDS = new Set(["gpt-5.3-codex", "gpt-5.4"]);
+const HIDDEN_LEGACY_CODEX_MODEL_IDS = new Set([
+  "gpt-5.2-codex",
+  "gpt-5.1-codex-max",
+  "gpt-5.1-codex-mini",
+]);
 
 export function modelSlug(model) {
   if (!model || typeof model !== "object") return "";
@@ -114,6 +119,7 @@ export function normalizeModels(remoteModels = []) {
   });
 
   for (const model of bySlug.values()) {
+    if (HIDDEN_LEGACY_CODEX_MODEL_IDS.has(modelSlug(model))) continue;
     merged.push({ ...model, isDefault: false });
   }
 
