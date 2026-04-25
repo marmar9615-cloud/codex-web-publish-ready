@@ -6,6 +6,7 @@ const shouldStartServer = !process.env.BASE_URL;
 
 export default {
   testDir: "./tests",
+  testMatch: /^live-.*\.spec\.mjs$/,
   timeout: 60_000,
   workers: 1,
   use: {
