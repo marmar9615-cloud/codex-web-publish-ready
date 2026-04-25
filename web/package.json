@@ -7,6 +7,7 @@
   "scripts": {
     "start": "CODEX_BIN=\"${CODEX_BIN:-$HOME/.local/bin/codex}\" node server.mjs",
     "start:prod": "NODE_ENV=production CODEX_BIN=\"${CODEX_BIN:-$HOME/.local/bin/codex}\" node server.mjs",
+    "test:unit": "node --test 'tests/unit/*.test.mjs'",
     "test:e2e": "CODEX_BIN=\"${CODEX_BIN:-$HOME/.local/bin/codex}\" npx playwright test",
     "test:e2e:auth": "CODEX_BIN=\"${CODEX_BIN:-$HOME/.local/bin/codex}\" PLAYWRIGHT_AUTH=1 npx playwright test"
   },
