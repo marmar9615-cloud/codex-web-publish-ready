@@ -46,16 +46,51 @@ function summarizeOutput(command, output, exitCode) {
 export function createTestRunner({ rpcCall, appendSystem }) {
   let currentRun = null;
 
+  async function fileExists(root, name) {
+    const result = await rpcCall("fs/readDirectory", { path: root });
+    const entries = new Set((result?.entries ?? []).map((entry) => entry.fileName));
+    return entries.has(name);
+  }
+
+  async function detectNodeTestCommand(root) {
+    const packageJsonPath = `${root.replace(/\/$/, "")}/package.json`;
+    const pkg = await rpcCall("fs/readFile", { path: packageJsonPath }).catch(() => null);
+    const raw = decodeBase64Utf8(pkg?.dataBase64 ?? "");
+    let scripts = {};
+    try {
+      scripts = JSON.parse(raw)?.scripts ?? {};
+    } catch {
+      scripts = {};
+    }
+    if (typeof scripts.test !== "string" || !scripts.test.trim()) {
+      return null;
+    }
+    if (await fileExists(root, "pnpm-lock.yaml")) {
+      return {
+        label: "pnpm test",
+        command: ["pnpm", "test"],
+      };
+    }
+    if (await fileExists(root, "yarn.lock")) {
+      return {
+        label: "yarn test",
+        command: ["yarn", "test"],
+      };
+    }
+    return {
+      label: "npm test -- --runInBand",
+      command: ["npm", "test", "--", "--runInBand"],
+    };
+  }
+
   async function detectCommand() {
     const root = state.whoami?.workdir ?? "";
     if (!root) return null;
     const result = await rpcCall("fs/readDirectory", { path: root });
     const entries = new Set((result?.entries ?? []).map((entry) => entry.fileName));
     if (entries.has("package.json")) {
-      return {
-        label: "npm test -- --runInBand",
-        command: ["npm", "test", "--", "--runInBand"],
-      };
+      const nodeCommand = await detectNodeTestCommand(root);
+      if (nodeCommand) return nodeCommand;
     }
     if (entries.has("Cargo.toml")) {
       return {
