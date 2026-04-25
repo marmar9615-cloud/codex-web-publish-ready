@@ -1,5 +1,10 @@
 import { $, load, state, save } from "./state.js";
 import { escapeHtml } from "./utils.js";
+import {
+  modelDisplayName,
+  modelSlug,
+  normalizeModels,
+} from "./modelCatalog.js";
 import { showToast } from "./toast.js";
 
 export function createModals({
@@ -178,7 +183,9 @@ export function createModals({
   }
 
   function openModelPickerModal() {
-    const models = Array.isArray(state.models) ? state.models : [];
+    const models = normalizeModels(
+      Array.isArray(state.models) ? state.models : [],
+    );
     const current = state.settings?.model ?? "";
     if (!models.length) {
       modal(
@@ -197,8 +204,8 @@ export function createModals({
     }
     const rows = models
       .map((model) => {
-        const slug = model.id ?? model.slug ?? model.model ?? "";
-        const name = model.name ?? model.title ?? slug;
+        const slug = modelSlug(model);
+        const name = modelDisplayName(model);
         const desc = model.description ?? "";
         return `
           <button type="button" class="model-row${slug === current ? " active" : ""}" data-model-slug="${escapeHtml(slug)}">
@@ -261,7 +268,7 @@ export function createModals({
             <td class="kbd-cell">${keys
               .split(" + ")
               .map((k) => `<kbd>${escapeHtml(k)}</kbd>`)
-              .join(" <span class=\"kbd-plus\">+</span> ")}</td>
+              .join(' <span class="kbd-plus">+</span> ')}</td>
             <td>${escapeHtml(desc)}</td>
           </tr>
         `,
@@ -300,7 +307,9 @@ export function createModals({
     let binary = "";
     const chunkSize = 0x8000;
     for (let index = 0; index < bytes.length; index += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+      binary += String.fromCharCode(
+        ...bytes.subarray(index, index + chunkSize),
+      );
     }
     return btoa(binary);
   }
@@ -425,7 +434,8 @@ export function createModals({
       });
     }
     for (const [eventName, groups] of Object.entries(next.hooks)) {
-      if (!Array.isArray(groups) || groups.length === 0) delete next.hooks[eventName];
+      if (!Array.isArray(groups) || groups.length === 0)
+        delete next.hooks[eventName];
     }
     return next;
   }
@@ -452,7 +462,9 @@ export function createModals({
       const response = await fetch("/api/memories");
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error ?? `memory discovery failed (${response.status})`);
+        throw new Error(
+          data.error ?? `memory discovery failed (${response.status})`,
+        );
       }
       return data;
     } catch (error) {
@@ -477,7 +489,9 @@ export function createModals({
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error ?? `secret list failed (${response.status})`);
+        throw new Error(
+          data.error ?? `secret list failed (${response.status})`,
+        );
       }
       return {
         available: true,
@@ -527,13 +541,15 @@ export function createModals({
     }
     try {
       const [statusData, reposData, oauthData] = await Promise.all([
-        fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/git/status`),
-        fetchProjectJson(`/api/github/repos?slug=${encodeURIComponent(slug)}`).catch(
-          () => ({
-            configured: false,
-            repos: [],
-          }),
+        fetchProjectJson(
+          `/api/projects/${encodeURIComponent(slug)}/git/status`,
         ),
+        fetchProjectJson(
+          `/api/github/repos?slug=${encodeURIComponent(slug)}`,
+        ).catch(() => ({
+          configured: false,
+          repos: [],
+        })),
         fetchProjectJson("/api/oauth/github/status").catch(() => emptyOauth),
       ]);
       return {
@@ -613,54 +629,63 @@ export function createModals({
         cloudflare: emptyCloudflare,
       };
     }
-    const [renderData, vercelData, netlifyData, cloudflareData] = await Promise.all([
-      fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/render`)
-        .then((data) => ({
-          configured: Boolean(data.configured),
-          hookLabel: data.hookLabel ?? null,
-          lastDeploy: data.lastDeploy ?? null,
-          error: null,
-        }))
-        .catch((error) => ({ ...emptyRender, error: error.message })),
-      fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/vercel`)
-        .then((data) => ({
-          configured: Boolean(data.configured),
-          hookLabel: data.hookLabel ?? null,
-          hasToken: Boolean(data.hasToken),
-          hasProjectId: Boolean(data.hasProjectId),
-          hasTeamId: Boolean(data.hasTeamId),
-          recent: Array.isArray(data.recent) ? data.recent : null,
-          recentError: data.recentError ?? null,
-          lastDeploy: data.lastDeploy ?? null,
-          error: null,
-        }))
-        .catch((error) => ({ ...emptyVercel, error: error.message })),
-      fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/netlify`)
-        .then((data) => ({
-          configured: Boolean(data.configured),
-          hookLabel: data.hookLabel ?? null,
-          hasToken: Boolean(data.hasToken),
-          hasSiteId: Boolean(data.hasSiteId),
-          recent: Array.isArray(data.recent) ? data.recent : null,
-          recentError: data.recentError ?? null,
-          lastDeploy: data.lastDeploy ?? null,
-          error: null,
-        }))
-        .catch((error) => ({ ...emptyNetlify, error: error.message })),
-      fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/deploy/cloudflare`)
-        .then((data) => ({
-          configured: Boolean(data.configured),
-          hookLabel: data.hookLabel ?? null,
-          hasToken: Boolean(data.hasToken),
-          hasAccountId: Boolean(data.hasAccountId),
-          hasProjectName: Boolean(data.hasProjectName),
-          recent: Array.isArray(data.recent) ? data.recent : null,
-          recentError: data.recentError ?? null,
-          lastDeploy: data.lastDeploy ?? null,
-          error: null,
-        }))
-        .catch((error) => ({ ...emptyCloudflare, error: error.message })),
-    ]);
+    const [renderData, vercelData, netlifyData, cloudflareData] =
+      await Promise.all([
+        fetchProjectJson(
+          `/api/projects/${encodeURIComponent(slug)}/deploy/render`,
+        )
+          .then((data) => ({
+            configured: Boolean(data.configured),
+            hookLabel: data.hookLabel ?? null,
+            lastDeploy: data.lastDeploy ?? null,
+            error: null,
+          }))
+          .catch((error) => ({ ...emptyRender, error: error.message })),
+        fetchProjectJson(
+          `/api/projects/${encodeURIComponent(slug)}/deploy/vercel`,
+        )
+          .then((data) => ({
+            configured: Boolean(data.configured),
+            hookLabel: data.hookLabel ?? null,
+            hasToken: Boolean(data.hasToken),
+            hasProjectId: Boolean(data.hasProjectId),
+            hasTeamId: Boolean(data.hasTeamId),
+            recent: Array.isArray(data.recent) ? data.recent : null,
+            recentError: data.recentError ?? null,
+            lastDeploy: data.lastDeploy ?? null,
+            error: null,
+          }))
+          .catch((error) => ({ ...emptyVercel, error: error.message })),
+        fetchProjectJson(
+          `/api/projects/${encodeURIComponent(slug)}/deploy/netlify`,
+        )
+          .then((data) => ({
+            configured: Boolean(data.configured),
+            hookLabel: data.hookLabel ?? null,
+            hasToken: Boolean(data.hasToken),
+            hasSiteId: Boolean(data.hasSiteId),
+            recent: Array.isArray(data.recent) ? data.recent : null,
+            recentError: data.recentError ?? null,
+            lastDeploy: data.lastDeploy ?? null,
+            error: null,
+          }))
+          .catch((error) => ({ ...emptyNetlify, error: error.message })),
+        fetchProjectJson(
+          `/api/projects/${encodeURIComponent(slug)}/deploy/cloudflare`,
+        )
+          .then((data) => ({
+            configured: Boolean(data.configured),
+            hookLabel: data.hookLabel ?? null,
+            hasToken: Boolean(data.hasToken),
+            hasAccountId: Boolean(data.hasAccountId),
+            hasProjectName: Boolean(data.hasProjectName),
+            recent: Array.isArray(data.recent) ? data.recent : null,
+            recentError: data.recentError ?? null,
+            lastDeploy: data.lastDeploy ?? null,
+            error: null,
+          }))
+          .catch((error) => ({ ...emptyCloudflare, error: error.message })),
+      ]);
     return {
       available: true,
       slug,
@@ -728,7 +753,9 @@ export function createModals({
       };
     }
     try {
-      const data = await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/ship`);
+      const data = await fetchProjectJson(
+        `/api/projects/${encodeURIComponent(slug)}/ship`,
+      );
       return {
         available: true,
         slug,
@@ -913,7 +940,9 @@ export function createModals({
     if (!deployData?.available) return false;
     const busyStates = new Set(["building", "queued"]);
     const recent = [
-      ...(deployData.vercel?.recent ?? []).map((d) => (d.state ?? "").toLowerCase()),
+      ...(deployData.vercel?.recent ?? []).map((d) =>
+        (d.state ?? "").toLowerCase(),
+      ),
       ...(deployData.netlify?.recent ?? []).map((d) =>
         mapNetlifyState((d.state ?? "").toLowerCase()),
       ),
@@ -1160,8 +1189,12 @@ export function createModals({
             const ts = deploy.createdAt
               ? new Date(deploy.createdAt).toLocaleString()
               : "";
-            const stateClass = mapCloudflareState((deploy.state ?? "").toLowerCase());
-            const stageLabel = deploy.stage ? ` · ${escapeHtml(deploy.stage)}` : "";
+            const stateClass = mapCloudflareState(
+              (deploy.state ?? "").toLowerCase(),
+            );
+            const stageLabel = deploy.stage
+              ? ` · ${escapeHtml(deploy.stage)}`
+              : "";
             return `
               <article class="manager-card vercel-deploy vercel-state-${escapeHtml(stateClass)}">
                 <div class="manager-card-head">
@@ -1368,7 +1401,8 @@ export function createModals({
     if (!logsData.configured) {
       const missing = [];
       if (!logsData.hasApiKey) missing.push("<code>RENDER_API_KEY</code>");
-      if (!logsData.hasServiceId) missing.push("<code>RENDER_SERVICE_ID</code>");
+      if (!logsData.hasServiceId)
+        missing.push("<code>RENDER_SERVICE_ID</code>");
       return `
         <p class="settings-copy">Stream live logs from your Render service without leaving Codex Web.</p>
         <div class="manager-empty logs-setup">
@@ -1385,7 +1419,9 @@ export function createModals({
         return leftTs - rightTs;
       })
       .map((log) => {
-        const ts = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "";
+        const ts = log.timestamp
+          ? new Date(log.timestamp).toLocaleTimeString()
+          : "";
         const level = log.labels?.type ?? log.labels?.level ?? "";
         const message = String(log.message ?? "");
         return `
@@ -1617,11 +1653,12 @@ export function createModals({
         };
 
         const refreshAll = async () => {
-          [currentGitData, currentDeployData, currentShipData] = await Promise.all([
-            loadProjectGitData(),
-            loadProjectDeployData(),
-            loadProjectShipData(),
-          ]);
+          [currentGitData, currentDeployData, currentShipData] =
+            await Promise.all([
+              loadProjectGitData(),
+              loadProjectDeployData(),
+              loadProjectShipData(),
+            ]);
           rerender();
           if (currentTab === "deploy" && isDeployActive(currentDeployData)) {
             startDeployTimer();
@@ -1631,11 +1668,13 @@ export function createModals({
         };
 
         const bind = () => {
-          mount.querySelector("#project-tools-close")?.addEventListener("click", () => {
-            stopLogsTimer();
-            stopDeployTimer();
-            closeModal();
-          });
+          mount
+            .querySelector("#project-tools-close")
+            ?.addEventListener("click", () => {
+              stopLogsTimer();
+              stopDeployTimer();
+              closeModal();
+            });
           mount.querySelectorAll("[data-project-tab]").forEach((button) => {
             button.addEventListener("click", () => {
               const nextTab = button.dataset.projectTab ?? "git";
@@ -1650,7 +1689,10 @@ export function createModals({
               if (currentTab === "logs" && !currentLogsData.available) {
                 void refreshLogs();
               }
-              if (currentTab === "deploy" && isDeployActive(currentDeployData)) {
+              if (
+                currentTab === "deploy" &&
+                isDeployActive(currentDeployData)
+              ) {
                 startDeployTimer();
               }
             });
@@ -1667,482 +1709,612 @@ export function createModals({
             });
           });
 
-          mount.querySelector("#project-git-refresh")?.addEventListener("click", () => {
-            void refreshGit();
-          });
-          mount.querySelector("#project-git-clone")?.addEventListener("click", async () => {
-            const slug = currentGitData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#project-git-clone");
-            button.disabled = true;
-            try {
-              const repo = mount.querySelector("#project-git-repo")?.value.trim() ?? "";
-              const branch = mount.querySelector("#project-git-branch")?.value.trim() ?? "";
-              await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/git/clone`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ repo, branch }),
-              });
-              setFeedback("#project-git-feedback", `Cloned ${repo}.`);
-              appendSystem(`Cloned ${repo} into ${state.whoami?.activeProjectName ?? slug}.`);
-              await refreshWhoAmI().catch(() => {});
-              await refreshAll();
-            } catch (error) {
-              setFeedback("#project-git-feedback", error.message, "error");
-              appendSystem(`git clone failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
-          mount.querySelector("#project-git-commit")?.addEventListener("click", async () => {
-            const slug = currentGitData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#project-git-commit");
-            button.disabled = true;
-            try {
-              const message =
-                mount.querySelector("#project-git-commit-message")?.value.trim() ?? "";
-              const data = await fetchProjectJson(
-                `/api/projects/${encodeURIComponent(slug)}/git/commit`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ message }),
-                },
-              );
-              setFeedback(
-                "#project-git-feedback",
-                data.noChanges ? "Nothing to commit." : "Commit created.",
-              );
-              await refreshAll();
-            } catch (error) {
-              setFeedback("#project-git-feedback", error.message, "error");
-              appendSystem(`git commit failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
-          mount.querySelector("#project-git-push")?.addEventListener("click", async () => {
-            const slug = currentGitData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#project-git-push");
-            button.disabled = true;
-            try {
-              await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/git/push`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({}),
-              });
-              setFeedback("#project-git-feedback", "Branch pushed.");
-              await refreshAll();
-            } catch (error) {
-              setFeedback("#project-git-feedback", error.message, "error");
-              appendSystem(`git push failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
-          mount.querySelector("#project-git-pr")?.addEventListener("click", async () => {
-            const slug = currentGitData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#project-git-pr");
-            button.disabled = true;
-            try {
-              const title =
-                mount.querySelector("#project-git-pr-title")?.value.trim() ?? "";
-              const body =
-                mount.querySelector("#project-git-pr-body")?.value.trim() ?? "";
-              const data = await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/git/pr`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ title, body }),
-              });
-              setFeedback(
-                "#project-git-feedback",
-                `PR #${data.pullRequest?.number ?? "?"} created.`,
-              );
-              if (data.pullRequest?.url) {
-                window.open(data.pullRequest.url, "_blank", "noopener");
+          mount
+            .querySelector("#project-git-refresh")
+            ?.addEventListener("click", () => {
+              void refreshGit();
+            });
+          mount
+            .querySelector("#project-git-clone")
+            ?.addEventListener("click", async () => {
+              const slug = currentGitData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#project-git-clone");
+              button.disabled = true;
+              try {
+                const repo =
+                  mount.querySelector("#project-git-repo")?.value.trim() ?? "";
+                const branch =
+                  mount.querySelector("#project-git-branch")?.value.trim() ??
+                  "";
+                await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/git/clone`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ repo, branch }),
+                  },
+                );
+                setFeedback("#project-git-feedback", `Cloned ${repo}.`);
+                appendSystem(
+                  `Cloned ${repo} into ${state.whoami?.activeProjectName ?? slug}.`,
+                );
+                await refreshWhoAmI().catch(() => {});
+                await refreshAll();
+              } catch (error) {
+                setFeedback("#project-git-feedback", error.message, "error");
+                appendSystem(`git clone failed: ${error.message}`, "error");
+              } finally {
+                button.disabled = false;
               }
-            } catch (error) {
-              setFeedback("#project-git-feedback", error.message, "error");
-              appendSystem(`pull request failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
+            });
+          mount
+            .querySelector("#project-git-commit")
+            ?.addEventListener("click", async () => {
+              const slug = currentGitData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#project-git-commit");
+              button.disabled = true;
+              try {
+                const message =
+                  mount
+                    .querySelector("#project-git-commit-message")
+                    ?.value.trim() ?? "";
+                const data = await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/git/commit`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message }),
+                  },
+                );
+                setFeedback(
+                  "#project-git-feedback",
+                  data.noChanges ? "Nothing to commit." : "Commit created.",
+                );
+                await refreshAll();
+              } catch (error) {
+                setFeedback("#project-git-feedback", error.message, "error");
+                appendSystem(`git commit failed: ${error.message}`, "error");
+              } finally {
+                button.disabled = false;
+              }
+            });
+          mount
+            .querySelector("#project-git-push")
+            ?.addEventListener("click", async () => {
+              const slug = currentGitData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#project-git-push");
+              button.disabled = true;
+              try {
+                await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/git/push`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({}),
+                  },
+                );
+                setFeedback("#project-git-feedback", "Branch pushed.");
+                await refreshAll();
+              } catch (error) {
+                setFeedback("#project-git-feedback", error.message, "error");
+                appendSystem(`git push failed: ${error.message}`, "error");
+              } finally {
+                button.disabled = false;
+              }
+            });
+          mount
+            .querySelector("#project-git-pr")
+            ?.addEventListener("click", async () => {
+              const slug = currentGitData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#project-git-pr");
+              button.disabled = true;
+              try {
+                const title =
+                  mount.querySelector("#project-git-pr-title")?.value.trim() ??
+                  "";
+                const body =
+                  mount.querySelector("#project-git-pr-body")?.value.trim() ??
+                  "";
+                const data = await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/git/pr`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ title, body }),
+                  },
+                );
+                setFeedback(
+                  "#project-git-feedback",
+                  `PR #${data.pullRequest?.number ?? "?"} created.`,
+                );
+                if (data.pullRequest?.url) {
+                  window.open(data.pullRequest.url, "_blank", "noopener");
+                }
+              } catch (error) {
+                setFeedback("#project-git-feedback", error.message, "error");
+                appendSystem(`pull request failed: ${error.message}`, "error");
+              } finally {
+                button.disabled = false;
+              }
+            });
 
-          mount.querySelector("#github-oauth-signin")?.addEventListener("click", async () => {
-            const button = mount.querySelector("#github-oauth-signin");
-            button.disabled = true;
-            try {
-              const data = await fetchProjectJson("/api/oauth/github/start");
-              if (!data.authorizeUrl) {
-                throw new Error("GitHub OAuth is not configured on this server.");
+          mount
+            .querySelector("#github-oauth-signin")
+            ?.addEventListener("click", async () => {
+              const button = mount.querySelector("#github-oauth-signin");
+              button.disabled = true;
+              try {
+                const data = await fetchProjectJson("/api/oauth/github/start");
+                if (!data.authorizeUrl) {
+                  throw new Error(
+                    "GitHub OAuth is not configured on this server.",
+                  );
+                }
+                const popup = window.open(
+                  data.authorizeUrl,
+                  "codex-github-oauth",
+                  "width=640,height=760,noopener=no,noreferrer=no",
+                );
+                if (!popup) {
+                  throw new Error(
+                    "Popup blocked — allow popups for this site and retry.",
+                  );
+                }
+                setFeedback(
+                  "#project-git-feedback",
+                  "Complete the GitHub authorization in the popup…",
+                );
+                await new Promise((resolve, reject) => {
+                  let settled = false;
+                  const onMessage = (event) => {
+                    if (event.origin !== window.location.origin) return;
+                    const payload = event?.data;
+                    if (!payload || typeof payload !== "object") return;
+                    if (payload.type === "codex:github-connected") {
+                      settled = true;
+                      window.removeEventListener("message", onMessage);
+                      clearInterval(watcher);
+                      resolve();
+                    } else if (payload.type === "codex:github-oauth-error") {
+                      settled = true;
+                      window.removeEventListener("message", onMessage);
+                      clearInterval(watcher);
+                      reject(
+                        new Error(payload.message ?? "GitHub sign-in failed."),
+                      );
+                    }
+                  };
+                  window.addEventListener("message", onMessage);
+                  const watcher = setInterval(() => {
+                    if (settled) return;
+                    if (popup.closed) {
+                      settled = true;
+                      window.removeEventListener("message", onMessage);
+                      clearInterval(watcher);
+                      reject(new Error("GitHub sign-in window was closed."));
+                    }
+                  }, 800);
+                });
+                setFeedback(
+                  "#project-git-feedback",
+                  "GitHub account connected.",
+                );
+                showToast("Signed in with GitHub.", "success");
+                await refreshAll();
+              } catch (error) {
+                setFeedback("#project-git-feedback", error.message, "error");
+                appendSystem(
+                  `github sign-in failed: ${error.message}`,
+                  "error",
+                );
+              } finally {
+                if (button && !button.isConnected) return;
+                if (button) button.disabled = false;
               }
-              const popup = window.open(
-                data.authorizeUrl,
-                "codex-github-oauth",
-                "width=640,height=760,noopener=no,noreferrer=no",
-              );
-              if (!popup) {
-                throw new Error("Popup blocked — allow popups for this site and retry.");
+            });
+          mount
+            .querySelector("#github-oauth-logout")
+            ?.addEventListener("click", async () => {
+              const button = mount.querySelector("#github-oauth-logout");
+              button.disabled = true;
+              try {
+                await fetchProjectJson("/api/oauth/github/logout", {
+                  method: "POST",
+                });
+                setFeedback(
+                  "#project-git-feedback",
+                  "GitHub account disconnected.",
+                );
+                showToast("GitHub account disconnected.", "success");
+                await refreshAll();
+              } catch (error) {
+                setFeedback("#project-git-feedback", error.message, "error");
+                appendSystem(
+                  `github disconnect failed: ${error.message}`,
+                  "error",
+                );
+              } finally {
+                if (button && !button.isConnected) return;
+                if (button) button.disabled = false;
               }
-              setFeedback(
-                "#project-git-feedback",
-                "Complete the GitHub authorization in the popup…",
-              );
-              await new Promise((resolve, reject) => {
-                let settled = false;
-                const onMessage = (event) => {
-                  if (event.origin !== window.location.origin) return;
-                  const payload = event?.data;
-                  if (!payload || typeof payload !== "object") return;
-                  if (payload.type === "codex:github-connected") {
-                    settled = true;
-                    window.removeEventListener("message", onMessage);
-                    clearInterval(watcher);
-                    resolve();
-                  } else if (payload.type === "codex:github-oauth-error") {
-                    settled = true;
-                    window.removeEventListener("message", onMessage);
-                    clearInterval(watcher);
-                    reject(new Error(payload.message ?? "GitHub sign-in failed."));
-                  }
+            });
+
+          mount
+            .querySelector("#render-hook-refresh")
+            ?.addEventListener("click", () => {
+              void refreshDeploy();
+            });
+          mount
+            .querySelector("#render-hook-save")
+            ?.addEventListener("click", async () => {
+              const slug = currentDeployData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#render-hook-save");
+              button.disabled = true;
+              try {
+                const syncHookUrl =
+                  mount.querySelector("#render-hook-url")?.value.trim() ?? "";
+                await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/deploy/render/config`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ syncHookUrl }),
+                  },
+                );
+                setFeedback(
+                  "#project-deploy-feedback",
+                  syncHookUrl ? "Render hook saved." : "Render hook cleared.",
+                );
+                await refreshDeploy();
+              } catch (error) {
+                setFeedback("#project-deploy-feedback", error.message, "error");
+                appendSystem(
+                  `render hook save failed: ${error.message}`,
+                  "error",
+                );
+              } finally {
+                button.disabled = false;
+              }
+            });
+          mount
+            .querySelector("#render-hook-trigger")
+            ?.addEventListener("click", async () => {
+              const slug = currentDeployData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#render-hook-trigger");
+              button.disabled = true;
+              try {
+                const data = await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/deploy/render/trigger`,
+                  { method: "POST" },
+                );
+                setFeedback(
+                  "#project-deploy-feedback",
+                  data.deploy?.responseText ?? "Render deploy triggered.",
+                );
+                showToast("Render sync hook triggered.", "success");
+                await refreshDeploy();
+              } catch (error) {
+                setFeedback("#project-deploy-feedback", error.message, "error");
+                appendSystem(`render deploy failed: ${error.message}`, "error");
+              } finally {
+                button.disabled = false;
+              }
+            });
+
+          mount
+            .querySelector("#vercel-refresh")
+            ?.addEventListener("click", () => {
+              void refreshDeploy();
+            });
+          mount
+            .querySelector("#vercel-save")
+            ?.addEventListener("click", async () => {
+              const slug = currentDeployData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#vercel-save");
+              button.disabled = true;
+              try {
+                const payload = {
+                  deployHookUrl:
+                    mount.querySelector("#vercel-hook-url")?.value.trim() ?? "",
                 };
-                window.addEventListener("message", onMessage);
-                const watcher = setInterval(() => {
-                  if (settled) return;
-                  if (popup.closed) {
-                    settled = true;
-                    window.removeEventListener("message", onMessage);
-                    clearInterval(watcher);
-                    reject(new Error("GitHub sign-in window was closed."));
-                  }
-                }, 800);
-              });
-              setFeedback("#project-git-feedback", "GitHub account connected.");
-              showToast("Signed in with GitHub.", "success");
-              await refreshAll();
-            } catch (error) {
-              setFeedback("#project-git-feedback", error.message, "error");
-              appendSystem(`github sign-in failed: ${error.message}`, "error");
-            } finally {
-              if (button && !button.isConnected) return;
-              if (button) button.disabled = false;
-            }
-          });
-          mount.querySelector("#github-oauth-logout")?.addEventListener("click", async () => {
-            const button = mount.querySelector("#github-oauth-logout");
-            button.disabled = true;
-            try {
-              await fetchProjectJson("/api/oauth/github/logout", { method: "POST" });
-              setFeedback("#project-git-feedback", "GitHub account disconnected.");
-              showToast("GitHub account disconnected.", "success");
-              await refreshAll();
-            } catch (error) {
-              setFeedback("#project-git-feedback", error.message, "error");
-              appendSystem(`github disconnect failed: ${error.message}`, "error");
-            } finally {
-              if (button && !button.isConnected) return;
-              if (button) button.disabled = false;
-            }
-          });
+                const tokenInput = mount.querySelector("#vercel-token");
+                if (tokenInput && tokenInput.value !== "") {
+                  payload.token = tokenInput.value;
+                }
+                const projectIdInput =
+                  mount.querySelector("#vercel-project-id");
+                if (projectIdInput && projectIdInput.value !== "") {
+                  payload.projectId = projectIdInput.value;
+                }
+                const teamIdInput = mount.querySelector("#vercel-team-id");
+                if (teamIdInput && teamIdInput.value !== "") {
+                  payload.teamId = teamIdInput.value;
+                }
+                await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/deploy/vercel/config`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  },
+                );
+                setFeedback("#project-deploy-feedback", "Vercel config saved.");
+                await refreshDeploy();
+              } catch (error) {
+                setFeedback("#project-deploy-feedback", error.message, "error");
+                appendSystem(
+                  `vercel config save failed: ${error.message}`,
+                  "error",
+                );
+              } finally {
+                button.disabled = false;
+              }
+            });
+          mount
+            .querySelector("#vercel-trigger")
+            ?.addEventListener("click", async () => {
+              const slug = currentDeployData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#vercel-trigger");
+              button.disabled = true;
+              try {
+                const data = await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/deploy/vercel/trigger`,
+                  { method: "POST" },
+                );
+                setFeedback(
+                  "#project-deploy-feedback",
+                  data.deploy?.responseText ?? "Vercel deploy triggered.",
+                );
+                showToast("Vercel deploy hook triggered.", "success");
+                await refreshDeploy();
+              } catch (error) {
+                setFeedback("#project-deploy-feedback", error.message, "error");
+                appendSystem(`vercel deploy failed: ${error.message}`, "error");
+              } finally {
+                button.disabled = false;
+              }
+            });
 
-          mount.querySelector("#render-hook-refresh")?.addEventListener("click", () => {
-            void refreshDeploy();
-          });
-          mount.querySelector("#render-hook-save")?.addEventListener("click", async () => {
-            const slug = currentDeployData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#render-hook-save");
-            button.disabled = true;
-            try {
-              const syncHookUrl =
-                mount.querySelector("#render-hook-url")?.value.trim() ?? "";
-              await fetchProjectJson(
-                `/api/projects/${encodeURIComponent(slug)}/deploy/render/config`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ syncHookUrl }),
-                },
-              );
-              setFeedback("#project-deploy-feedback", syncHookUrl ? "Render hook saved." : "Render hook cleared.");
-              await refreshDeploy();
-            } catch (error) {
-              setFeedback("#project-deploy-feedback", error.message, "error");
-              appendSystem(`render hook save failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
-          mount.querySelector("#render-hook-trigger")?.addEventListener("click", async () => {
-            const slug = currentDeployData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#render-hook-trigger");
-            button.disabled = true;
-            try {
-              const data = await fetchProjectJson(
-                `/api/projects/${encodeURIComponent(slug)}/deploy/render/trigger`,
-                { method: "POST" },
-              );
-              setFeedback("#project-deploy-feedback", data.deploy?.responseText ?? "Render deploy triggered.");
-              showToast("Render sync hook triggered.", "success");
-              await refreshDeploy();
-            } catch (error) {
-              setFeedback("#project-deploy-feedback", error.message, "error");
-              appendSystem(`render deploy failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
-
-          mount.querySelector("#vercel-refresh")?.addEventListener("click", () => {
-            void refreshDeploy();
-          });
-          mount.querySelector("#vercel-save")?.addEventListener("click", async () => {
-            const slug = currentDeployData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#vercel-save");
-            button.disabled = true;
-            try {
-              const payload = {
-                deployHookUrl:
-                  mount.querySelector("#vercel-hook-url")?.value.trim() ?? "",
-              };
-              const tokenInput = mount.querySelector("#vercel-token");
-              if (tokenInput && tokenInput.value !== "") {
-                payload.token = tokenInput.value;
+          mount
+            .querySelector("#netlify-refresh")
+            ?.addEventListener("click", () => {
+              void refreshDeploy();
+            });
+          mount
+            .querySelector("#netlify-save")
+            ?.addEventListener("click", async () => {
+              const slug = currentDeployData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#netlify-save");
+              button.disabled = true;
+              try {
+                const payload = {
+                  buildHookUrl:
+                    mount.querySelector("#netlify-hook-url")?.value.trim() ??
+                    "",
+                };
+                const tokenInput = mount.querySelector("#netlify-token");
+                if (tokenInput && tokenInput.value !== "") {
+                  payload.token = tokenInput.value;
+                }
+                const siteIdInput = mount.querySelector("#netlify-site-id");
+                if (siteIdInput && siteIdInput.value !== "") {
+                  payload.siteId = siteIdInput.value;
+                }
+                await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/deploy/netlify/config`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  },
+                );
+                setFeedback(
+                  "#project-deploy-feedback",
+                  "Netlify config saved.",
+                );
+                await refreshDeploy();
+              } catch (error) {
+                setFeedback("#project-deploy-feedback", error.message, "error");
+                appendSystem(
+                  `netlify config save failed: ${error.message}`,
+                  "error",
+                );
+              } finally {
+                button.disabled = false;
               }
-              const projectIdInput = mount.querySelector("#vercel-project-id");
-              if (projectIdInput && projectIdInput.value !== "") {
-                payload.projectId = projectIdInput.value;
+            });
+          mount
+            .querySelector("#netlify-trigger")
+            ?.addEventListener("click", async () => {
+              const slug = currentDeployData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#netlify-trigger");
+              button.disabled = true;
+              try {
+                const data = await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/deploy/netlify/trigger`,
+                  { method: "POST" },
+                );
+                setFeedback(
+                  "#project-deploy-feedback",
+                  data.deploy?.responseText ?? "Netlify deploy triggered.",
+                );
+                showToast("Netlify build hook triggered.", "success");
+                await refreshDeploy();
+              } catch (error) {
+                setFeedback("#project-deploy-feedback", error.message, "error");
+                appendSystem(
+                  `netlify deploy failed: ${error.message}`,
+                  "error",
+                );
+              } finally {
+                button.disabled = false;
               }
-              const teamIdInput = mount.querySelector("#vercel-team-id");
-              if (teamIdInput && teamIdInput.value !== "") {
-                payload.teamId = teamIdInput.value;
-              }
-              await fetchProjectJson(
-                `/api/projects/${encodeURIComponent(slug)}/deploy/vercel/config`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload),
-                },
-              );
-              setFeedback("#project-deploy-feedback", "Vercel config saved.");
-              await refreshDeploy();
-            } catch (error) {
-              setFeedback("#project-deploy-feedback", error.message, "error");
-              appendSystem(`vercel config save failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
-          mount.querySelector("#vercel-trigger")?.addEventListener("click", async () => {
-            const slug = currentDeployData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#vercel-trigger");
-            button.disabled = true;
-            try {
-              const data = await fetchProjectJson(
-                `/api/projects/${encodeURIComponent(slug)}/deploy/vercel/trigger`,
-                { method: "POST" },
-              );
-              setFeedback(
-                "#project-deploy-feedback",
-                data.deploy?.responseText ?? "Vercel deploy triggered.",
-              );
-              showToast("Vercel deploy hook triggered.", "success");
-              await refreshDeploy();
-            } catch (error) {
-              setFeedback("#project-deploy-feedback", error.message, "error");
-              appendSystem(`vercel deploy failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
-
-          mount.querySelector("#netlify-refresh")?.addEventListener("click", () => {
-            void refreshDeploy();
-          });
-          mount.querySelector("#netlify-save")?.addEventListener("click", async () => {
-            const slug = currentDeployData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#netlify-save");
-            button.disabled = true;
-            try {
-              const payload = {
-                buildHookUrl:
-                  mount.querySelector("#netlify-hook-url")?.value.trim() ?? "",
-              };
-              const tokenInput = mount.querySelector("#netlify-token");
-              if (tokenInput && tokenInput.value !== "") {
-                payload.token = tokenInput.value;
-              }
-              const siteIdInput = mount.querySelector("#netlify-site-id");
-              if (siteIdInput && siteIdInput.value !== "") {
-                payload.siteId = siteIdInput.value;
-              }
-              await fetchProjectJson(
-                `/api/projects/${encodeURIComponent(slug)}/deploy/netlify/config`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload),
-                },
-              );
-              setFeedback("#project-deploy-feedback", "Netlify config saved.");
-              await refreshDeploy();
-            } catch (error) {
-              setFeedback("#project-deploy-feedback", error.message, "error");
-              appendSystem(`netlify config save failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
-          mount.querySelector("#netlify-trigger")?.addEventListener("click", async () => {
-            const slug = currentDeployData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#netlify-trigger");
-            button.disabled = true;
-            try {
-              const data = await fetchProjectJson(
-                `/api/projects/${encodeURIComponent(slug)}/deploy/netlify/trigger`,
-                { method: "POST" },
-              );
-              setFeedback(
-                "#project-deploy-feedback",
-                data.deploy?.responseText ?? "Netlify deploy triggered.",
-              );
-              showToast("Netlify build hook triggered.", "success");
-              await refreshDeploy();
-            } catch (error) {
-              setFeedback("#project-deploy-feedback", error.message, "error");
-              appendSystem(`netlify deploy failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
+            });
 
           mount.querySelector("#cf-refresh")?.addEventListener("click", () => {
             void refreshDeploy();
           });
-          mount.querySelector("#cf-save")?.addEventListener("click", async () => {
-            const slug = currentDeployData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#cf-save");
-            button.disabled = true;
-            try {
-              const payload = {
-                deployHookUrl:
-                  mount.querySelector("#cf-hook-url")?.value.trim() ?? "",
-              };
-              const tokenInput = mount.querySelector("#cf-token");
-              if (tokenInput && tokenInput.value !== "") {
-                payload.token = tokenInput.value;
+          mount
+            .querySelector("#cf-save")
+            ?.addEventListener("click", async () => {
+              const slug = currentDeployData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#cf-save");
+              button.disabled = true;
+              try {
+                const payload = {
+                  deployHookUrl:
+                    mount.querySelector("#cf-hook-url")?.value.trim() ?? "",
+                };
+                const tokenInput = mount.querySelector("#cf-token");
+                if (tokenInput && tokenInput.value !== "") {
+                  payload.token = tokenInput.value;
+                }
+                const accountIdInput = mount.querySelector("#cf-account-id");
+                if (accountIdInput && accountIdInput.value !== "") {
+                  payload.accountId = accountIdInput.value;
+                }
+                const projectNameInput =
+                  mount.querySelector("#cf-project-name");
+                if (projectNameInput && projectNameInput.value !== "") {
+                  payload.projectName = projectNameInput.value;
+                }
+                await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/deploy/cloudflare/config`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  },
+                );
+                setFeedback(
+                  "#project-deploy-feedback",
+                  "Cloudflare config saved.",
+                );
+                await refreshDeploy();
+              } catch (error) {
+                setFeedback("#project-deploy-feedback", error.message, "error");
+                appendSystem(
+                  `cloudflare config save failed: ${error.message}`,
+                  "error",
+                );
+              } finally {
+                button.disabled = false;
               }
-              const accountIdInput = mount.querySelector("#cf-account-id");
-              if (accountIdInput && accountIdInput.value !== "") {
-                payload.accountId = accountIdInput.value;
+            });
+          mount
+            .querySelector("#cf-trigger")
+            ?.addEventListener("click", async () => {
+              const slug = currentDeployData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#cf-trigger");
+              button.disabled = true;
+              try {
+                const data = await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/deploy/cloudflare/trigger`,
+                  { method: "POST" },
+                );
+                setFeedback(
+                  "#project-deploy-feedback",
+                  data.deploy?.responseText ?? "Cloudflare deploy triggered.",
+                );
+                showToast("Cloudflare deploy hook triggered.", "success");
+                await refreshDeploy();
+              } catch (error) {
+                setFeedback("#project-deploy-feedback", error.message, "error");
+                appendSystem(
+                  `cloudflare deploy failed: ${error.message}`,
+                  "error",
+                );
+              } finally {
+                button.disabled = false;
               }
-              const projectNameInput = mount.querySelector("#cf-project-name");
-              if (projectNameInput && projectNameInput.value !== "") {
-                payload.projectName = projectNameInput.value;
-              }
-              await fetchProjectJson(
-                `/api/projects/${encodeURIComponent(slug)}/deploy/cloudflare/config`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload),
-                },
-              );
-              setFeedback("#project-deploy-feedback", "Cloudflare config saved.");
-              await refreshDeploy();
-            } catch (error) {
-              setFeedback("#project-deploy-feedback", error.message, "error");
-              appendSystem(`cloudflare config save failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
-          mount.querySelector("#cf-trigger")?.addEventListener("click", async () => {
-            const slug = currentDeployData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#cf-trigger");
-            button.disabled = true;
-            try {
-              const data = await fetchProjectJson(
-                `/api/projects/${encodeURIComponent(slug)}/deploy/cloudflare/trigger`,
-                { method: "POST" },
-              );
-              setFeedback(
-                "#project-deploy-feedback",
-                data.deploy?.responseText ?? "Cloudflare deploy triggered.",
-              );
-              showToast("Cloudflare deploy hook triggered.", "success");
-              await refreshDeploy();
-            } catch (error) {
-              setFeedback("#project-deploy-feedback", error.message, "error");
-              appendSystem(`cloudflare deploy failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
+            });
 
-          mount.querySelector("#ship-refresh")?.addEventListener("click", () => {
-            void refreshShip();
-          });
-          mount.querySelector("#ship-run")?.addEventListener("click", async () => {
-            const slug = currentShipData.slug;
-            if (!slug) return;
-            const button = mount.querySelector("#ship-run");
-            button.disabled = true;
-            try {
-              lastShipResult = await fetchProjectJson(`/api/projects/${encodeURIComponent(slug)}/ship`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  testsCommand:
-                    mount.querySelector("#ship-tests-command")?.value.trim() ?? "",
-                  buildCommand:
-                    mount.querySelector("#ship-build-command")?.value.trim() ?? "",
-                  commitMessage:
-                    mount.querySelector("#ship-commit-message")?.value.trim() ?? "",
-                  deployAfter:
-                    mount.querySelector("#ship-deploy-after")?.checked ?? false,
-                  createTag:
-                    mount.querySelector("#ship-create-tag")?.checked ?? false,
-                  tagName:
-                    mount.querySelector("#ship-tag-name")?.value.trim() ?? "",
-                  generateChangelog:
-                    mount.querySelector("#ship-generate-changelog")?.checked ?? false,
-                }),
-              });
-              setFeedback(
-                "#project-ship-feedback",
-                lastShipResult.ok ? "Ship it completed." : "Ship it stopped on a failing step.",
-                lastShipResult.ok ? "info" : "error",
-              );
-              showToast(
-                lastShipResult.ok ? "Ship it completed." : "Ship it stopped on a failing step.",
-                lastShipResult.ok ? "success" : "warn",
-              );
-              await refreshWhoAmI().catch(() => {});
-              await refreshAll();
-            } catch (error) {
-              setFeedback("#project-ship-feedback", error.message, "error");
-              appendSystem(`ship it failed: ${error.message}`, "error");
-            } finally {
-              button.disabled = false;
-            }
-          });
+          mount
+            .querySelector("#ship-refresh")
+            ?.addEventListener("click", () => {
+              void refreshShip();
+            });
+          mount
+            .querySelector("#ship-run")
+            ?.addEventListener("click", async () => {
+              const slug = currentShipData.slug;
+              if (!slug) return;
+              const button = mount.querySelector("#ship-run");
+              button.disabled = true;
+              try {
+                lastShipResult = await fetchProjectJson(
+                  `/api/projects/${encodeURIComponent(slug)}/ship`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      testsCommand:
+                        mount
+                          .querySelector("#ship-tests-command")
+                          ?.value.trim() ?? "",
+                      buildCommand:
+                        mount
+                          .querySelector("#ship-build-command")
+                          ?.value.trim() ?? "",
+                      commitMessage:
+                        mount
+                          .querySelector("#ship-commit-message")
+                          ?.value.trim() ?? "",
+                      deployAfter:
+                        mount.querySelector("#ship-deploy-after")?.checked ??
+                        false,
+                      createTag:
+                        mount.querySelector("#ship-create-tag")?.checked ??
+                        false,
+                      tagName:
+                        mount.querySelector("#ship-tag-name")?.value.trim() ??
+                        "",
+                      generateChangelog:
+                        mount.querySelector("#ship-generate-changelog")
+                          ?.checked ?? false,
+                    }),
+                  },
+                );
+                setFeedback(
+                  "#project-ship-feedback",
+                  lastShipResult.ok
+                    ? "Ship it completed."
+                    : "Ship it stopped on a failing step.",
+                  lastShipResult.ok ? "info" : "error",
+                );
+                showToast(
+                  lastShipResult.ok
+                    ? "Ship it completed."
+                    : "Ship it stopped on a failing step.",
+                  lastShipResult.ok ? "success" : "warn",
+                );
+                await refreshWhoAmI().catch(() => {});
+                await refreshAll();
+              } catch (error) {
+                setFeedback("#project-ship-feedback", error.message, "error");
+                appendSystem(`ship it failed: ${error.message}`, "error");
+              } finally {
+                button.disabled = false;
+              }
+            });
 
-          mount.querySelector("#logs-refresh")?.addEventListener("click", () => {
-            void refreshLogs();
-          });
+          mount
+            .querySelector("#logs-refresh")
+            ?.addEventListener("click", () => {
+              void refreshLogs();
+            });
           const autoRefreshInput = mount.querySelector("#logs-autorefresh");
           if (autoRefreshInput) {
             autoRefreshInput.checked = logsAutoRefresh;
@@ -2272,13 +2444,16 @@ export function createModals({
   function collectHookRows(mount) {
     return [...mount.querySelectorAll(".hook-row")].map((row) => ({
       id: row.dataset.hookRowId,
-      enabled: row.querySelector('[data-hook-field="enabled"]')?.checked ?? false,
+      enabled:
+        row.querySelector('[data-hook-field="enabled"]')?.checked ?? false,
       eventName:
-        row.querySelector('[data-hook-field="eventName"]')?.value ?? "PreToolUse",
+        row.querySelector('[data-hook-field="eventName"]')?.value ??
+        "PreToolUse",
       matcher: row.querySelector('[data-hook-field="matcher"]')?.value ?? "",
       statusMessage:
         row.querySelector('[data-hook-field="statusMessage"]')?.value ?? "",
-      timeoutSec: row.querySelector('[data-hook-field="timeoutSec"]')?.value ?? "",
+      timeoutSec:
+        row.querySelector('[data-hook-field="timeoutSec"]')?.value ?? "",
       command: row.querySelector('[data-hook-field="command"]')?.value ?? "",
     }));
   }
@@ -2562,7 +2737,8 @@ export function createModals({
                 try {
                   await navigator.clipboard.writeText(userCode);
                   if (showToast && hintEl) {
-                    hintEl.textContent = "Code copied. Paste it in the new tab to continue.";
+                    hintEl.textContent =
+                      "Code copied. Paste it in the new tab to continue.";
                   }
                   return true;
                 } catch {
@@ -2887,7 +3063,7 @@ export function createModals({
             try {
               await rpcCall("skills/config/write", {
                 path: skill.path ?? null,
-                name: skill.path ? null : skill.name ?? null,
+                name: skill.path ? null : (skill.name ?? null),
                 enabled: !skill.enabled,
               });
               await refresh();
@@ -3118,14 +3294,12 @@ export function createModals({
                     <div class="manager-tags">
                       <span class="manager-tag">${app.isAccessible ? "connected" : "not connected"}</span>
                       <span class="manager-tag">${app.isEnabled ? "enabled" : "disabled"}</span>
-                      ${
-                        (app.labels ?? [])
-                          .map(
-                            (label) =>
-                              `<span class="manager-tag">${escapeHtml(label)}</span>`,
-                          )
-                          .join("")
-                      }
+                      ${(app.labels ?? [])
+                        .map(
+                          (label) =>
+                            `<span class="manager-tag">${escapeHtml(label)}</span>`,
+                        )
+                        .join("")}
                     </div>
                   </article>
                 `,
@@ -3183,22 +3357,23 @@ export function createModals({
     const config = state.configSnapshot?.config ?? {};
     const configLayers = state.configSnapshot?.layers ?? [];
     const requirements = state.configRequirements?.requirements ?? null;
-    const models = [...state.models];
+    const models = normalizeModels(state.models);
     if (
       settings.model &&
       !models.some((model) => {
-        const id = model.id ?? model.slug ?? model.model;
-        return id === settings.model;
+        return modelSlug(model) === settings.model;
       })
     ) {
       models.unshift({ id: settings.model });
     }
-    const modelOptions = (models.length
-      ? models.map((model) => {
-          const id = model.id ?? model.slug ?? model.model;
-          return `<option value="${escapeHtml(id)}" ${settings.model === id ? "selected" : ""}>${escapeHtml(id)}</option>`;
-        })
-      : ['<option value="">No models available</option>']
+    const modelOptions = (
+      models.length
+        ? models.map((model) => {
+            const id = modelSlug(model);
+            const label = modelDisplayName(model) || id;
+            return `<option value="${escapeHtml(id)}" ${settings.model === id ? "selected" : ""}>${escapeHtml(label)}</option>`;
+          })
+        : ['<option value="">No models available</option>']
     ).join("");
     const select = (name, options) =>
       `<select name="${name}">${options.map((option) => `<option value="${option}" ${settings[name] === option ? "selected" : ""}>${option}</option>`).join("")}</select>`;
@@ -3515,11 +3690,14 @@ export function createModals({
         const secretsList = mount.querySelector("#secrets-list");
         const memoryModeSelect = mount.querySelector("#thread-memory-mode");
         const renderHooksEditor = () => {
-          if (hooksEditor) hooksEditor.innerHTML = renderHookRows(currentHooksState.rows);
+          if (hooksEditor)
+            hooksEditor.innerHTML = renderHookRows(currentHooksState.rows);
         };
         const renderMemoryList = () => {
           if (memoryList) {
-            memoryList.innerHTML = renderMemoryItems(currentMemoriesData.items ?? []);
+            memoryList.innerHTML = renderMemoryItems(
+              currentMemoriesData.items ?? [],
+            );
           }
         };
         const renderSecretsList = () => {
@@ -3546,9 +3724,8 @@ export function createModals({
           let anyMatch = false;
           mount.querySelectorAll(".settings-panel").forEach((panel) => {
             const tab = tabsByName.get(panel.dataset.panel);
-            const haystack = (
-              `${tab?.textContent ?? ""} ${panel.textContent ?? ""}`
-            ).toLowerCase();
+            const haystack =
+              `${tab?.textContent ?? ""} ${panel.textContent ?? ""}`.toLowerCase();
             const matches = !query || haystack.includes(query);
             if (tab) tab.hidden = !matches;
             if (matches) {
@@ -3597,25 +3774,32 @@ export function createModals({
           }
           renderHooksEditor();
         });
-        mount.querySelector("#reload-hooks")?.addEventListener("click", async () => {
-          currentHooksState = await loadHooksEditorState();
-          renderHooksEditor();
-          appendSystem("Hooks reloaded from hooks.json.");
-        });
-        mount.querySelector("#save-hooks")?.addEventListener("click", async () => {
-          const button = mount.querySelector("#save-hooks");
-          button.disabled = true;
-          try {
-            currentHooksState.rows = collectHookRows(mount);
-            await writeHooksFile(currentHooksState.rows, currentHooksState.preserved);
-            await refreshConfigState().catch(() => {});
-            appendSystem("Hooks saved.");
-          } catch (error) {
-            appendSystem(`hooks save failed: ${error.message}`, "error");
-          } finally {
-            button.disabled = false;
-          }
-        });
+        mount
+          .querySelector("#reload-hooks")
+          ?.addEventListener("click", async () => {
+            currentHooksState = await loadHooksEditorState();
+            renderHooksEditor();
+            appendSystem("Hooks reloaded from hooks.json.");
+          });
+        mount
+          .querySelector("#save-hooks")
+          ?.addEventListener("click", async () => {
+            const button = mount.querySelector("#save-hooks");
+            button.disabled = true;
+            try {
+              currentHooksState.rows = collectHookRows(mount);
+              await writeHooksFile(
+                currentHooksState.rows,
+                currentHooksState.preserved,
+              );
+              await refreshConfigState().catch(() => {});
+              appendSystem("Hooks saved.");
+            } catch (error) {
+              appendSystem(`hooks save failed: ${error.message}`, "error");
+            } finally {
+              button.disabled = false;
+            }
+          });
         mount
           .querySelector("#apply-memory-mode")
           ?.addEventListener("click", async () => {
@@ -3630,7 +3814,10 @@ export function createModals({
               persistThreadMemoryMode(memoryModeSelect.value);
               appendSystem(`thread memory mode → ${memoryModeSelect.value}`);
             } catch (error) {
-              appendSystem(`memory mode update failed: ${error.message}`, "error");
+              appendSystem(
+                `memory mode update failed: ${error.message}`,
+                "error",
+              );
             } finally {
               button.disabled = false;
             }
@@ -3645,7 +3832,11 @@ export function createModals({
         mount
           .querySelector("#reset-memories")
           ?.addEventListener("click", async () => {
-            if (!confirm("Reset the session memory store? Generated memories will be deleted.")) {
+            if (
+              !confirm(
+                "Reset the session memory store? Generated memories will be deleted.",
+              )
+            ) {
               return;
             }
             const button = mount.querySelector("#reset-memories");
@@ -3749,13 +3940,18 @@ export function createModals({
         memoryList?.addEventListener("click", async (event) => {
           const button = event.target.closest("[data-action='preview-memory']");
           if (!button) return;
-          const item = currentMemoriesData.items?.[Number(button.dataset.memoryIndex)];
+          const item =
+            currentMemoriesData.items?.[Number(button.dataset.memoryIndex)];
           if (!item?.path) return;
           try {
             const response = await rpcCall("fs/readFile", { path: item.path });
-            openTextModal(item.fileName ?? "Memory file", decodeBase64(response?.dataBase64 ?? ""), {
-              className: "modal-wide",
-            });
+            openTextModal(
+              item.fileName ?? "Memory file",
+              decodeBase64(response?.dataBase64 ?? ""),
+              {
+                className: "modal-wide",
+              },
+            );
           } catch (error) {
             appendSystem(`memory preview failed: ${error.message}`, "error");
           }

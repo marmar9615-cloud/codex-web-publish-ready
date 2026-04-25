@@ -25,6 +25,14 @@ import {
 } from "./notifications.js";
 import { createRpc } from "./rpc.js";
 import { createCommandHandler } from "./commands.js";
+import {
+  LEGACY_DEFAULT_MODEL_IDS,
+  DEFAULT_MODEL_ID,
+  MODEL_CATALOG_VERSION,
+  modelSlug,
+  normalizeModels,
+  pickDefaultModel,
+} from "./modelCatalog.js";
 
 let transcriptAutoScroll = true;
 let lastSubmittedTurn = null;
@@ -157,7 +165,11 @@ function updateStatusBar() {
   const backendPill = $("#backend-pill");
   backendPill.textContent = `backend: ${whoami.backend ?? "?"}`;
   backendPill.className = `pill ${whoami.backend === "real" ? "ok" : "warn"}`;
-  $("#model-pill").textContent = `model: ${state.settings.model || "…"}`;
+  const modelLabel =
+    state.initialized || state.models.length
+      ? state.settings.model || DEFAULT_MODEL_ID
+      : "…";
+  $("#model-pill").textContent = `model: ${modelLabel}`;
   $("#approval-pill").textContent =
     `approvals: ${state.settings.approvalPolicy}`;
   $("#sandbox-pill").textContent = `sandbox: ${state.settings.sandboxMode}`;
@@ -328,29 +340,29 @@ const handleSlash = createCommandHandler({
 
 async function bootstrap() {
   applyPersistedSidebarState();
-  // Wire the Files/Todos toggle handlers and set their initial visibility
+  // Wire the chrome/composer handlers and set their initial visibility
   // BEFORE the network fetches below — otherwise a user clicking during the
   // first few hundred ms lands on an unbound button and the first click is
   // silently dropped (next click works, producing the "two clicks to open"
   // bug reported in audit #8).
   fileTree.init();
   todoPane.init();
-  await refreshWhoAmI();
-  await refreshProjects();
-  await refreshThreads();
   bindUi();
-  renderComposerMode();
-  livePreview.init();
-  mobilePreview.init();
-  terminal.init();
-  testRunner.init();
-  subagentPane.init();
   window.addEventListener("codex:planUpdated", (event) => {
     todoPane.update(event.detail ?? {});
   });
   window.addEventListener("codex:refreshSubagents", () => {
     void subagentPane.refresh();
   });
+  await refreshWhoAmI();
+  await refreshProjects();
+  await refreshThreads();
+  renderComposerMode();
+  livePreview.init();
+  mobilePreview.init();
+  terminal.init();
+  testRunner.init();
+  subagentPane.init();
   rpc.connectWs();
   updateStatusBar();
   uploads.renderPendingUploads();
@@ -440,11 +452,6 @@ async function refreshThreads() {
   });
 }
 
-function modelSlug(model) {
-  if (!model || typeof model !== "object") return "";
-  return model.id ?? model.slug ?? model.model ?? "";
-}
-
 async function refreshModels() {
   if (!state.initialized) return;
   try {
@@ -457,22 +464,40 @@ async function refreshModels() {
       : Array.isArray(response?.models)
         ? response.models
         : [];
-    state.models = models;
+    state.models = normalizeModels(models);
     if (models.length) {
-      const slugs = new Set(models.map(modelSlug).filter(Boolean));
+      const slugs = new Set(state.models.map(modelSlug).filter(Boolean));
       const current = state.settings.model;
-      if (!current || !slugs.has(current)) {
-        const pick = models.find((model) => model.isDefault) ?? models[0];
-        const slug = modelSlug(pick);
-        if (slug) {
-          state.settings.model = slug;
-          save("settings", state.settings);
-        }
+      const shouldMigrateLegacyDefault =
+        state.settings.modelCatalogVersion !== MODEL_CATALOG_VERSION &&
+        (!current || LEGACY_DEFAULT_MODEL_IDS.has(current));
+      if (!current || !slugs.has(current) || shouldMigrateLegacyDefault) {
+        state.settings.model = pickDefaultModel(
+          state.models,
+          shouldMigrateLegacyDefault ? "" : current,
+        );
+        state.settings.modelCatalogVersion = MODEL_CATALOG_VERSION;
+        save("settings", state.settings);
+      } else if (state.settings.modelCatalogVersion !== MODEL_CATALOG_VERSION) {
+        state.settings.modelCatalogVersion = MODEL_CATALOG_VERSION;
+        save("settings", state.settings);
       }
+    } else {
+      state.models = normalizeModels([]);
+      state.settings.model = pickDefaultModel(
+        state.models,
+        state.settings.model,
+      );
+      state.settings.modelCatalogVersion = MODEL_CATALOG_VERSION;
+      save("settings", state.settings);
     }
     updateStatusBar();
   } catch (error) {
     console.warn("model/list failed", error.message);
+    state.models = normalizeModels(state.models);
+    state.settings.model = pickDefaultModel(state.models, state.settings.model);
+    save("settings", state.settings);
+    updateStatusBar();
   }
 }
 
@@ -613,9 +638,7 @@ async function openThread(threadId) {
   // Prefer any title we already have from the sidebar list; otherwise keep a
   // friendly placeholder until thread/read hydrates the real data.
   const existingThread = state.threads.find((entry) => entry.id === threadId);
-  setThreadTitle(
-    deriveThreadTitle(existingThread) || "Loading conversation…",
-  );
+  setThreadTitle(deriveThreadTitle(existingThread) || "Loading conversation…");
   clearConversationState();
   renderers.renderThreads();
   void subagentPane.refresh();
@@ -1013,7 +1036,8 @@ async function handleThreadAction(action, thread) {
         });
       const newThread = forkResult?.thread ?? forkResult;
       if (!newThread?.id) return;
-      const baseName = thread?.name ?? thread?.preview ?? thread?.id ?? "thread";
+      const baseName =
+        thread?.name ?? thread?.preview ?? thread?.id ?? "thread";
       const copyName = `${baseName} (copy)`;
       await rpc
         .rpcCall("thread/name/set", {
@@ -1119,7 +1143,7 @@ async function handleThreadAction(action, thread) {
 function bindUi() {
   $("#composer").addEventListener("submit", onSubmit);
   $("#cancel-btn").addEventListener("click", () => void interruptTurn());
-  $("#new-thread").addEventListener("click", newThread);
+  $("#new-thread")?.addEventListener("click", newThread);
   $("#sidebar-collapse-btn")?.addEventListener("click", toggleSidebar);
   $("#sidebar-toggle-btn")?.addEventListener("click", toggleSidebar);
   bindWorkspaceTabs();
@@ -1128,7 +1152,8 @@ function bindUi() {
     activateWorkspaceTab("runner");
     void testRunner.runDetectedTests();
   });
-  $("#account-btn").addEventListener("click", onAccountClick);
+  $("#account-btn")?.addEventListener("click", onAccountClick);
+  document.addEventListener("codex:open-login", () => modals.openLogin());
   $("#settings-btn").addEventListener("click", () => modals.openSettings());
   $("#workspace-github-btn")?.addEventListener("click", () => {
     void modals.openProjectToolsModal("git");
@@ -1204,7 +1229,9 @@ function bindUi() {
 
   document.addEventListener("keydown", (event) => {
     if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
-    const modalOpen = Boolean(document.querySelector("#modal-root .modal-backdrop"));
+    const modalOpen = Boolean(
+      document.querySelector("#modal-root .modal-backdrop"),
+    );
     const key = event.key.toLowerCase();
     if (key === "b" && !event.shiftKey && !modalOpen) {
       event.preventDefault();
@@ -1282,6 +1309,7 @@ function activateWorkspaceTab(name) {
 
 function bindWorkspaceTabs() {
   for (const tab of document.querySelectorAll(".workspace-tab")) {
+    tab.textContent = tab.textContent.trim();
     tab.addEventListener("click", () => {
       activateWorkspaceTab(tab.dataset.workspaceTab ?? "terminal");
     });
@@ -1431,7 +1459,13 @@ function fuzzyScore(query, text) {
   return 1;
 }
 
-function renderPaletteList(mount, actions, query, selectedIndex, recentIds = []) {
+function renderPaletteList(
+  mount,
+  actions,
+  query,
+  selectedIndex,
+  recentIds = [],
+) {
   const list = mount.querySelector("#palette-list");
   if (!list) return;
   const trimmed = (query ?? "").trim();
@@ -1632,7 +1666,13 @@ function openCommandPalette() {
   };
 
   const rerender = () => {
-    renderPaletteList(mount, actions, query, selectedIndex, readPaletteRecents());
+    renderPaletteList(
+      mount,
+      actions,
+      query,
+      selectedIndex,
+      readPaletteRecents(),
+    );
     updateAriaActiveDescendant();
   };
 
@@ -1699,7 +1739,9 @@ async function createProject() {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error ?? `project create failed (${response.status})`);
+      throw new Error(
+        data.error ?? `project create failed (${response.status})`,
+      );
     }
     await refreshProjects();
     renderers.appendSystem(`Created project ${data.project?.name ?? name}.`);
@@ -1731,7 +1773,9 @@ async function activateProject(project) {
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error ?? `project activate failed (${response.status})`);
+      throw new Error(
+        data.error ?? `project activate failed (${response.status})`,
+      );
     }
     await refreshWhoAmI();
     await refreshProjects();
@@ -1749,7 +1793,10 @@ async function activateProject(project) {
       active: entry.slug === (previousSlug ?? "_scratch"),
     }));
     renderers.renderProjects();
-    renderers.appendSystem(`project activate failed: ${error.message}`, "error");
+    renderers.appendSystem(
+      `project activate failed: ${error.message}`,
+      "error",
+    );
   }
 }
 
@@ -1766,7 +1813,9 @@ async function deleteProject(project) {
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error ?? `project delete failed (${response.status})`);
+      throw new Error(
+        data.error ?? `project delete failed (${response.status})`,
+      );
     }
     await refreshWhoAmI();
     await refreshProjects();
@@ -1829,7 +1878,9 @@ async function onInput(event) {
         ? results.map((path) => ({ name: `@${path}`, desc: "file" }))
         : [
             {
-              name: query ? `No files match "${query}"` : "No files in workspace",
+              name: query
+                ? `No files match "${query}"`
+                : "No files in workspace",
               desc: "",
               disabled: true,
             },
@@ -1839,9 +1890,7 @@ async function onInput(event) {
       console.warn("file-search failed", error);
       showAutocomplete({
         kind: "file",
-        items: [
-          { name: "File search unavailable", desc: "", disabled: true },
-        ],
+        items: [{ name: "File search unavailable", desc: "", disabled: true }],
         anchorStart,
       });
     }
@@ -1869,9 +1918,9 @@ function showAutocomplete({ kind, items, anchorStart }) {
     .join("");
   const footerHtml =
     '<div class="ac-footer">' +
-    '<span><kbd>\u2191</kbd><kbd>\u2193</kbd> nav</span>' +
-    '<span><kbd>\u21b5</kbd> select</span>' +
-    '<span><kbd>esc</kbd> cancel</span>' +
+    "<span><kbd>\u2191</kbd><kbd>\u2193</kbd> nav</span>" +
+    "<span><kbd>\u21b5</kbd> select</span>" +
+    "<span><kbd>esc</kbd> cancel</span>" +
     "</div>";
   autocomplete.innerHTML = itemsHtml + footerHtml;
   autocomplete.hidden = false;
@@ -1979,8 +2028,7 @@ function onSubmit(event) {
 
 function selectedModelId() {
   if (state.settings.model) return state.settings.model;
-  const pick = state.models.find((model) => model.isDefault) ?? state.models[0];
-  return modelSlug(pick) || "gpt-5.5";
+  return pickDefaultModel(state.models, "");
 }
 
 function buildCollaborationMode() {

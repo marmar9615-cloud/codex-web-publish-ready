@@ -50,7 +50,9 @@ export function createTodoPane() {
       applyVisibility();
       return;
     }
-    const completed = plan.plan.filter((item) => item.status === "completed").length;
+    const completed = plan.plan.filter(
+      (item) => item.status === "completed",
+    ).length;
     const total = plan.plan.length;
     const inProgress = plan.plan.some((item) => item.status === "inProgress");
     const summary = `${completed} of ${total} done${inProgress ? " · one in progress" : ""}`;

@@ -183,7 +183,9 @@ export function createLivePreview({ appendSystem }) {
     const response = await fetch("/api/preview/ports");
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error ?? `preview detection failed (${response.status})`);
+      throw new Error(
+        data.error ?? `preview detection failed (${response.status})`,
+      );
     }
     detectedPorts = data.ports ?? [];
     if (!previewUi.port && detectedPorts.length) {
@@ -210,7 +212,9 @@ export function createLivePreview({ appendSystem }) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error ?? `preview activation failed (${response.status})`);
+      throw new Error(
+        data.error ?? `preview activation failed (${response.status})`,
+      );
     }
     activeBaseUrl = data.previewBaseUrl ?? "";
     render();

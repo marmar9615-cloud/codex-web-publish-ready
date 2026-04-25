@@ -54,9 +54,7 @@ function renderTurnSummary(turn) {
     .filter((item) => item.type === "agentMessage")
     .map((item) => item.text ?? "")
     .filter(Boolean);
-  const toolMessages = items
-    .map(summarizeToolItem)
-    .filter(Boolean);
+  const toolMessages = items.map(summarizeToolItem).filter(Boolean);
   return `
     <article class="subagent-turn">
       <div class="subagent-turn-head">
@@ -96,6 +94,8 @@ function renderTurnSummary(turn) {
 
 export function createSubagentPane({ rpcCall, openThread, appendSystem }) {
   const detailCache = new Map();
+  let lastParentThreadId = "";
+  let lastTasks = [];
 
   function host() {
     return $("#subagent-pane");
@@ -110,7 +110,9 @@ export function createSubagentPane({ rpcCall, openThread, appendSystem }) {
     for (const itemId of state.itemOrder) {
       const item = state.itemsById.get(itemId)?.item;
       if (item?.type !== "collabAgentToolCall") continue;
-      for (const [threadId, status] of Object.entries(item.agentsStates ?? {})) {
+      for (const [threadId, status] of Object.entries(
+        item.agentsStates ?? {},
+      )) {
         map.set(threadId, String(status ?? ""));
       }
     }
@@ -121,18 +123,31 @@ export function createSubagentPane({ rpcCall, openThread, appendSystem }) {
     const parentThreadId = state.activeThreadId;
     if (!parentThreadId) return [];
     const agentStates = currentAgentStates();
-    return state.threads
+    const tasks = state.threads
       .filter((thread) => getSubagentParentThreadId(thread) === parentThreadId)
       .map((thread) => ({
         ...thread,
         taskState: agentStates.get(thread.id) || thread.status || "idle",
       }))
       .sort((left, right) => {
-        const leftRunning = /progress|running|queued|waiting/i.test(left.taskState);
-        const rightRunning = /progress|running|queued|waiting/i.test(right.taskState);
+        const leftRunning = /progress|running|queued|waiting/i.test(
+          left.taskState,
+        );
+        const rightRunning = /progress|running|queued|waiting/i.test(
+          right.taskState,
+        );
         if (leftRunning !== rightRunning) return leftRunning ? -1 : 1;
         return (right.lastActive ?? 0) - (left.lastActive ?? 0);
       });
+    if (tasks.length) {
+      lastParentThreadId = parentThreadId;
+      lastTasks = tasks;
+      return tasks;
+    }
+    if (parentThreadId === lastParentThreadId && lastTasks.length) {
+      return lastTasks;
+    }
+    return [];
   }
 
   async function ensureDetail(threadId) {
@@ -143,7 +158,11 @@ export function createSubagentPane({ rpcCall, openThread, appendSystem }) {
       detailCache.set(threadId, thread);
       return thread;
     }
-    if (!state.initialized || !state.ws || state.ws.readyState !== WebSocket.OPEN) {
+    if (
+      !state.initialized ||
+      !state.ws ||
+      state.ws.readyState !== WebSocket.OPEN
+    ) {
       return thread;
     }
     try {
@@ -178,11 +197,15 @@ export function createSubagentPane({ rpcCall, openThread, appendSystem }) {
       pane.innerHTML = "";
       return;
     }
-    if (!subagentUi.selectedThreadId || !tasks.some((task) => task.id === subagentUi.selectedThreadId)) {
+    if (
+      !subagentUi.selectedThreadId ||
+      !tasks.some((task) => task.id === subagentUi.selectedThreadId)
+    ) {
       subagentUi.selectedThreadId = tasks[0].id;
       persistUi();
     }
-    const selectedThread = tasks.find((task) => task.id === subagentUi.selectedThreadId) ?? tasks[0];
+    const selectedThread =
+      tasks.find((task) => task.id === subagentUi.selectedThreadId) ?? tasks[0];
     const detail = detailCache.get(selectedThread.id) ?? selectedThread;
     const meta = getThreadSpawnMeta(selectedThread);
     pane.hidden = !subagentUi.visible;
@@ -260,7 +283,11 @@ export function createSubagentPane({ rpcCall, openThread, appendSystem }) {
 
   async function refresh() {
     const tasks = tasksForActiveThread();
-    if (tasks.length && subagentUi.visible === false && !toggleButton()?.matches(":focus")) {
+    if (
+      tasks.length &&
+      subagentUi.visible === false &&
+      !toggleButton()?.matches(":focus")
+    ) {
       // Respect explicit hides until the selection disappears.
       if (!tasks.some((task) => task.id === subagentUi.selectedThreadId)) {
         subagentUi.visible = true;

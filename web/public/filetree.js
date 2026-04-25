@@ -421,7 +421,9 @@ export function createFileTree({ rpcCall, appendSystem }) {
               renderTree();
               // Re-focus the same row by path after the re-render.
               focusRow(
-                $(`#workspace-files .workspace-row[data-path="${CSS.escape(path)}"]`),
+                $(
+                  `#workspace-files .workspace-row[data-path="${CSS.escape(path)}"]`,
+                ),
               );
             } else {
               // Already expanded: jump to the first child if any.
@@ -436,7 +438,9 @@ export function createFileTree({ rpcCall, appendSystem }) {
               expandedDirectories.delete(path);
               renderTree();
               focusRow(
-                $(`#workspace-files .workspace-row[data-path="${CSS.escape(path)}"]`),
+                $(
+                  `#workspace-files .workspace-row[data-path="${CSS.escape(path)}"]`,
+                ),
               );
               return;
             }
@@ -485,8 +489,7 @@ export function createFileTree({ rpcCall, appendSystem }) {
       (table) => table.name === database.selectedTable,
     );
     const databaseColumns =
-      database?.columns?.map((column) => column.name ?? "") ??
-      [];
+      database?.columns?.map((column) => column.name ?? "") ?? [];
     const databaseBody = !database?.tables?.length
       ? '<div class="workspace-empty">No tables or views were found in this SQLite database.</div>'
       : `
@@ -525,7 +528,8 @@ export function createFileTree({ rpcCall, appendSystem }) {
                     }>Previous</button>
                     <button type="button" class="ghost" data-db-next ${
                       database.totalRows != null &&
-                      database.offset + database.rows.length >= database.totalRows
+                      database.offset + database.rows.length >=
+                        database.totalRows
                         ? "disabled"
                         : ""
                     }>Next</button>
@@ -576,13 +580,13 @@ export function createFileTree({ rpcCall, appendSystem }) {
         ? `<div class="workspace-empty workspace-error">${escapeHtml(selectedFile.error)}</div>`
         : database
           ? databaseBody
-        : isImage
-          ? `<div class="workspace-media-wrap"><img data-workdir-path="${escapeHtml(selectedFile.path)}" alt="${escapeHtml(selectedFile.path)}" /></div>`
-          : isHtml && selectedFile.previewUrl
-            ? `<iframe class="workspace-preview-frame" src="${escapeHtml(selectedFile.previewUrl)}" title="${escapeHtml(selectedFile.path)}"></iframe>`
-            : isMarkdown
-              ? `<div class="workspace-markdown">${renderMarkdownish(selectedFile.text)}</div>`
-              : `<pre class="workspace-code"><code>${escapeHtml(selectedFile.text)}</code></pre>`;
+          : isImage
+            ? `<div class="workspace-media-wrap"><img data-workdir-path="${escapeHtml(selectedFile.path)}" alt="${escapeHtml(selectedFile.path)}" /></div>`
+            : isHtml && selectedFile.previewUrl
+              ? `<iframe class="workspace-preview-frame" src="${escapeHtml(selectedFile.previewUrl)}" title="${escapeHtml(selectedFile.path)}"></iframe>`
+              : isMarkdown
+                ? `<div class="workspace-markdown">${renderMarkdownish(selectedFile.text)}</div>`
+                : `<pre class="workspace-code"><code>${escapeHtml(selectedFile.text)}</code></pre>`;
     host.innerHTML = `
       <div class="workspace-viewer-head">
         <div>

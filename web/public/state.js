@@ -49,6 +49,7 @@ export const state = {
     networkAccessEnabled: false,
     modelReasoningEffort: "medium",
     webSearchMode: "disabled",
+    modelCatalogVersion: "",
   }),
   composerFlags: load("composerFlags", {
     planMode: false,

@@ -4,7 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#07090f" />
-    <meta name="description" content="Codex Web — the browser frontend for the Codex coding agent." />
+    <meta
+      name="description"
+      content="Codex Web — the browser frontend for the Codex coding agent."
+    />
     <title>Codex Web</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/styles.css" />
@@ -15,38 +18,72 @@
         <header>
           <div class="brand" aria-label="Codex Web">
             <span class="brand-mark" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M11.5 3.5 5.5 10.5 2.5 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M11.5 3.5 5.5 10.5 2.5 7.5"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
             </span>
             <span>codex<span class="brand-accent">/web</span></span>
           </div>
-          <div class="sidebar-header-actions">
-            <button id="sidebar-collapse-btn" type="button" class="icon-btn ghost" title="Collapse sidebar" aria-label="Collapse sidebar">
-              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M5 4.5h10v11H5z M9 4.5v11 M13 8l-2 2 2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-            <button id="new-thread" type="button" class="icon-btn ghost" title="New chat" aria-label="New chat">
-              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M10 4.5v11M4.5 10h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-              </svg>
-            </button>
-          </div>
         </header>
         <div class="sidebar-filters" role="tablist" aria-label="Thread filters">
-          <button id="thread-filter-active" type="button" class="filter-pill active" role="tab" aria-selected="true">Active</button>
-          <button id="thread-filter-archived" type="button" class="filter-pill" role="tab" aria-selected="false">Archived</button>
+          <button
+            id="thread-filter-active"
+            type="button"
+            class="filter-pill active"
+            role="tab"
+            aria-selected="true"
+          >
+            Active
+          </button>
+          <button
+            id="thread-filter-archived"
+            type="button"
+            class="filter-pill"
+            role="tab"
+            aria-selected="false"
+          >
+            Archived
+          </button>
         </div>
         <div class="sidebar-search">
-          <input id="thread-search" type="search" placeholder="Search threads…" aria-label="Search threads" autocomplete="off" spellcheck="false" />
+          <input
+            id="thread-search"
+            type="search"
+            placeholder="Search threads…"
+            aria-label="Search threads"
+            autocomplete="off"
+            spellcheck="false"
+          />
         </div>
         <section class="sidebar-section" aria-labelledby="projects-heading">
           <div class="sidebar-section-head">
             <h2 id="projects-heading">Projects</h2>
-            <button id="new-project-btn" type="button" class="icon-btn ghost" title="New project" aria-label="New project">
+            <button
+              id="new-project-btn"
+              type="button"
+              class="icon-btn ghost"
+              title="New project"
+              aria-label="New project"
+            >
               <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M10 4.5v11M4.5 10h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                <path
+                  d="M10 4.5v11M4.5 10h11"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                />
               </svg>
             </button>
           </div>
@@ -56,31 +93,66 @@
         <footer>
           <div id="account-info">
             <span id="account-status" class="muted">checking…</span>
-            <button id="account-btn" type="button">Sign in</button>
           </div>
-          <button id="settings-btn" type="button" class="full ghost">Settings</button>
+          <button id="settings-btn" type="button" class="full ghost">
+            Settings
+          </button>
         </footer>
       </aside>
 
       <main id="chat">
         <div id="chat-header">
-          <button id="sidebar-toggle-btn" type="button" class="icon-btn ghost" title="Toggle sidebar (⌘B)" aria-label="Toggle sidebar">
+          <button
+            id="sidebar-toggle-btn"
+            type="button"
+            class="icon-btn ghost"
+            title="Toggle sidebar (⌘B)"
+            aria-label="Toggle sidebar"
+          >
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-              <path d="M4.5 4h11v12h-11z M8.5 4v12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              <path
+                d="M4.5 4h11v12h-11z M8.5 4v12"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
           </button>
-          <div class="chat-header-main">
-            <div id="thread-title">New conversation</div>
-            <div id="workspace-root-chip" class="header-subtitle" hidden></div>
-          </div>
+          <div id="thread-title" hidden>New conversation</div>
           <div id="status-bar" aria-label="Session status">
-            <button id="subagent-toggle-btn" type="button" class="pill ghost-pill" hidden>Tasks</button>
-            <button id="todo-toggle-btn" type="button" class="pill ghost-pill">Todos</button>
-            <button id="workspace-toggle-btn" type="button" class="pill ghost-pill">Files</button>
+            <button
+              id="subagent-toggle-btn"
+              type="button"
+              class="pill ghost-pill"
+              hidden
+            >
+              Tasks
+            </button>
+            <button id="todo-toggle-btn" type="button" class="pill ghost-pill">
+              Todos
+            </button>
+            <button
+              id="workspace-toggle-btn"
+              type="button"
+              class="pill ghost-pill"
+            >
+              Files
+            </button>
             <span id="backend-pill" class="pill">backend: …</span>
-            <span id="ws-status-pill" class="pill" hidden>link: connecting…</span>
+            <span id="ws-status-pill" class="pill" hidden
+              >link: connecting…</span
+            >
             <span id="account-pill" class="pill" hidden>account: …</span>
-            <button id="model-pill" type="button" class="pill pill-button" aria-haspopup="listbox" aria-label="Change model">model: …</button>
+            <button
+              id="model-pill"
+              type="button"
+              class="pill pill-button"
+              aria-haspopup="listbox"
+              aria-label="Change model"
+            >
+              model: …
+            </button>
             <span id="approval-pill" class="pill">approvals: …</span>
             <span id="sandbox-pill" class="pill">sandbox: …</span>
             <span id="token-pill" class="pill" hidden>tokens: …</span>
@@ -88,7 +160,11 @@
           </div>
         </div>
 
-        <aside id="subagent-pane" aria-label="Running sub-agent tasks" hidden></aside>
+        <aside
+          id="subagent-pane"
+          aria-label="Running sub-agent tasks"
+          hidden
+        ></aside>
         <div id="transcript-wrap">
           <div id="transcript" tabindex="0" aria-label="Conversation"></div>
           <button
@@ -100,7 +176,14 @@
             hidden
           >
             <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-              <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <path
+                d="M4 6l4 4 4-4"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                fill="none"
+              />
             </svg>
             <span>Latest</span>
           </button>
@@ -108,27 +191,58 @@
         <template id="empty-hero-tpl">
           <div class="empty-hero" aria-hidden="false">
             <div class="empty-hero-mark" aria-hidden="true">
-              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M22.5 7 11 19 5.5 13.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 28 28"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M22.5 7 11 19 5.5 13.5"
+                  stroke="currentColor"
+                  stroke-width="2.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
             </div>
             <div class="empty-hero-signed-in">
               <h1 class="empty-hero-title">How can I help today?</h1>
-              <p class="empty-hero-sub">I can read your code, run commands, apply patches, and browse the web. Try one of these to get started.</p>
+              <p class="empty-hero-sub">
+                I can read your code, run commands, apply patches, and browse
+                the web. Try one of these to get started.
+              </p>
               <div class="empty-hero-chips">
-                <button type="button" class="hero-chip" data-prompt="Give me a plan to add a dark mode toggle.">
+                <button
+                  type="button"
+                  class="hero-chip"
+                  data-prompt="Give me a plan to add a dark mode toggle."
+                >
                   <span class="hero-chip-tag">plan</span>
                   Plan a feature
                 </button>
-                <button type="button" class="hero-chip" data-prompt="Explain what this project does and show me its architecture.">
+                <button
+                  type="button"
+                  class="hero-chip"
+                  data-prompt="Explain what this project does and show me its architecture."
+                >
                   <span class="hero-chip-tag">explain</span>
                   Explain this repo
                 </button>
-                <button type="button" class="hero-chip" data-prompt="Write tests for the most complex function you can find.">
+                <button
+                  type="button"
+                  class="hero-chip"
+                  data-prompt="Write tests for the most complex function you can find."
+                >
                   <span class="hero-chip-tag">test</span>
                   Write tests
                 </button>
-                <button type="button" class="hero-chip" data-prompt="Find and fix any obvious bugs in recently-changed files.">
+                <button
+                  type="button"
+                  class="hero-chip"
+                  data-prompt="Find and fix any obvious bugs in recently-changed files."
+                >
                   <span class="hero-chip-tag">fix</span>
                   Find bugs
                 </button>
@@ -142,23 +256,58 @@
             </div>
             <div class="empty-hero-signed-out">
               <h1 class="empty-hero-title">Welcome to Codex Web.</h1>
-              <p class="empty-hero-sub">A browser frontend for the Codex coding agent. Sign in to start a project, run commands, edit files, and deploy in one place.</p>
+              <p class="empty-hero-sub">
+                A browser frontend for the Codex coding agent. Sign in to start
+                a project, run commands, edit files, and deploy in one place.
+              </p>
               <div class="empty-hero-cta">
-                <button type="button" class="hero-signin primary" data-hero-signin="true">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:6px">
-                    <path d="M3 3h8v8H3z M7 1v12 M1 7h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                <button
+                  type="button"
+                  class="hero-signin primary"
+                  data-hero-signin="true"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 14 14"
+                    fill="none"
+                    aria-hidden="true"
+                    style="vertical-align: -2px; margin-right: 6px"
+                  >
+                    <path
+                      d="M3 3h8v8H3z M7 1v12 M1 7h12"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                    />
                   </svg>
                   Sign in with ChatGPT
                 </button>
-                <button type="button" class="hero-signin ghost" data-hero-signin="true">
+                <button
+                  type="button"
+                  class="hero-signin ghost"
+                  data-hero-signin="true"
+                >
                   Use an API key instead
                 </button>
               </div>
               <ul class="empty-hero-features">
-                <li><strong>Projects</strong> · persistent workspaces with git + deploy</li>
-                <li><strong>Files & terminal</strong> · browse, edit, run from the browser</li>
-                <li><strong>Ship it</strong> · tests → build → git push → Render deploy</li>
-                <li><strong>Live preview</strong> · detect dev servers and proxy them here</li>
+                <li>
+                  <strong>Projects</strong> · persistent workspaces with git +
+                  deploy
+                </li>
+                <li>
+                  <strong>Files & terminal</strong> · browse, edit, run from the
+                  browser
+                </li>
+                <li>
+                  <strong>Ship it</strong> · tests → build → git push → Render
+                  deploy
+                </li>
+                <li>
+                  <strong>Live preview</strong> · detect dev servers and proxy
+                  them here
+                </li>
               </ul>
               <div class="empty-hero-shortcuts" aria-label="Keyboard shortcuts">
                 <span><kbd>⌘</kbd><kbd>K</kbd> command palette</span>
@@ -175,9 +324,13 @@
             <div id="pending-uploads" hidden></div>
             <div id="composer-plan-banner" class="composer-plan-banner" hidden>
               <span class="composer-plan-label">Plan mode</span>
-              <span>Codex will stay in planning mode for this turn and return a proposed plan before acting.</span>
+              <span
+                >Codex will stay in planning mode for this turn and return a
+                proposed plan before acting.</span
+              >
             </div>
-            <textarea id="input"
+            <textarea
+              id="input"
               rows="1"
               aria-label="Message Codex"
               placeholder="Ask Codex anything. Use / for commands, @ to reference files…"
@@ -186,7 +339,8 @@
               spellcheck="false"
               data-gramm="false"
               data-gramm_editor="false"
-              data-enable-grammarly="false"></textarea>
+              data-enable-grammarly="false"
+            ></textarea>
             <div class="composer-row">
               <span id="composer-hint" class="muted">
                 <kbd>↵</kbd> send<span class="sep">·</span>
@@ -195,24 +349,72 @@
                 <kbd>esc</kbd> cancel
               </span>
               <div>
-                <button type="button" id="plan-mode-toggle" class="ghost" aria-pressed="false">
+                <button
+                  type="button"
+                  id="plan-mode-toggle"
+                  class="ghost"
+                  aria-pressed="false"
+                >
                   Plan mode
                 </button>
                 <input id="attach-input" type="file" accept="image/*" hidden />
-                <button type="button" id="attach-btn" class="ghost" title="Attach image">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:4px">
-                    <path d="M11.5 7 7 11.5a2.5 2.5 0 0 1-3.5-3.5l5-5a1.8 1.8 0 1 1 2.5 2.5L5.7 10.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>Attach
+                <button
+                  type="button"
+                  id="attach-btn"
+                  class="ghost"
+                  title="Attach image"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                    style="vertical-align: -2px; margin-right: 4px"
+                  >
+                    <path
+                      d="M11.5 7 7 11.5a2.5 2.5 0 0 1-3.5-3.5l5-5a1.8 1.8 0 1 1 2.5 2.5L5.7 10.8"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    /></svg
+                  >Attach
                 </button>
                 <button type="button" id="cancel-btn" class="danger" hidden>
-                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" style="vertical-align:-1px;margin-right:4px">
-                    <rect x="1.5" y="1.5" width="7" height="7" rx="1" fill="currentColor"/>
-                  </svg>Stop
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 10 10"
+                    aria-hidden="true"
+                    style="vertical-align: -1px; margin-right: 4px"
+                  >
+                    <rect
+                      x="1.5"
+                      y="1.5"
+                      width="7"
+                      height="7"
+                      rx="1"
+                      fill="currentColor"
+                    /></svg
+                  >Stop
                 </button>
                 <button type="submit" id="send-btn" class="primary">
                   Send
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-1px;margin-left:4px">
-                    <path d="m3 8 10-4-4 10-2-4-4-2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    aria-hidden="true"
+                    style="vertical-align: -1px; margin-left: 4px"
+                  >
+                    <path
+                      d="m3 8 10-4-4 10-2-4-4-2Z"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linejoin="round"
+                    />
                   </svg>
                 </button>
               </div>
@@ -229,26 +431,88 @@
             <div class="workspace-title-row">
               <strong>Files</strong>
               <span id="workspace-status" class="muted">disconnected</span>
+              <span id="workspace-root-chip" class="workspace-root-chip" hidden
+                >Workspace</span
+              >
             </div>
-            <div id="workspace-root-path" class="workspace-root-path">No active workspace</div>
+            <div id="workspace-root-path" class="workspace-root-path">
+              No active workspace
+            </div>
           </div>
-          <div class="workspace-actions">
-            <button id="workspace-github-btn" type="button" class="ghost">GitHub</button>
-            <button id="workspace-deploy-btn" type="button" class="ghost">Deploy</button>
-            <button id="workspace-ship-btn" type="button" class="primary">Ship it</button>
-            <button id="workspace-refresh-btn" type="button" class="ghost">Refresh</button>
-            <button id="workspace-run-tests-btn" type="button" class="ghost">Run tests</button>
-            <button id="workspace-close-btn" type="button" class="ghost">Hide</button>
+          <div class="workspace-actions" aria-label="Workspace actions">
+            <button id="workspace-ship-btn" type="button" class="primary">
+              Ship it
+            </button>
+            <button id="workspace-refresh-btn" type="button" class="ghost">
+              Refresh
+            </button>
+            <button id="workspace-run-tests-btn" type="button" class="ghost">
+              Run tests
+            </button>
+            <button id="workspace-github-btn" type="button" class="ghost">
+              GitHub
+            </button>
+            <button id="workspace-deploy-btn" type="button" class="ghost">
+              Deploy
+            </button>
+            <button id="workspace-close-btn" type="button" class="ghost">
+              Hide
+            </button>
           </div>
         </header>
         <nav id="workspace-tabs" role="tablist" aria-label="Workspace tools">
-          <button type="button" role="tab" class="workspace-tab active" data-workspace-tab="files" aria-selected="true">Files</button>
-          <button type="button" role="tab" class="workspace-tab" data-workspace-tab="terminal" aria-selected="false">Terminal</button>
-          <button type="button" role="tab" class="workspace-tab" data-workspace-tab="preview" aria-selected="false">Preview</button>
-          <button type="button" role="tab" class="workspace-tab" data-workspace-tab="mobile" aria-selected="false">Mobile</button>
-          <button type="button" role="tab" class="workspace-tab" data-workspace-tab="runner" aria-selected="false">Tests</button>
+          <button
+            type="button"
+            role="tab"
+            class="workspace-tab active"
+            data-workspace-tab="files"
+            aria-selected="true"
+          >
+            Files
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="workspace-tab"
+            data-workspace-tab="terminal"
+            aria-selected="false"
+          >
+            Terminal
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="workspace-tab"
+            data-workspace-tab="preview"
+            aria-selected="false"
+          >
+            Preview
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="workspace-tab"
+            data-workspace-tab="mobile"
+            aria-selected="false"
+          >
+            Mobile
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="workspace-tab"
+            data-workspace-tab="runner"
+            aria-selected="false"
+          >
+            Tests
+          </button>
         </nav>
-        <section id="workspace-shell" class="workspace-tab-pane active" data-workspace-pane="files" aria-label="Workspace file browser">
+        <section
+          id="workspace-shell"
+          class="workspace-tab-pane active"
+          data-workspace-pane="files"
+          aria-label="Workspace file browser"
+        >
           <div id="workspace-files" aria-label="Workspace file tree"></div>
           <div id="workspace-viewer" aria-label="Workspace file viewer">
             <div class="workspace-empty">
@@ -256,10 +520,34 @@
             </div>
           </div>
         </section>
-        <section id="workspace-terminal" class="workspace-tab-pane" data-workspace-pane="terminal" aria-label="Workspace terminal" hidden></section>
-        <section id="workspace-live-preview" class="workspace-tab-pane" data-workspace-pane="preview" aria-label="Workspace live preview" hidden></section>
-        <section id="workspace-mobile" class="workspace-tab-pane" data-workspace-pane="mobile" aria-label="Workspace mobile preview" hidden></section>
-        <section id="workspace-runner" class="workspace-tab-pane" data-workspace-pane="runner" aria-label="Workspace test runner" hidden></section>
+        <section
+          id="workspace-terminal"
+          class="workspace-tab-pane"
+          data-workspace-pane="terminal"
+          aria-label="Workspace terminal"
+          hidden
+        ></section>
+        <section
+          id="workspace-live-preview"
+          class="workspace-tab-pane"
+          data-workspace-pane="preview"
+          aria-label="Workspace live preview"
+          hidden
+        ></section>
+        <section
+          id="workspace-mobile"
+          class="workspace-tab-pane"
+          data-workspace-pane="mobile"
+          aria-label="Workspace mobile preview"
+          hidden
+        ></section>
+        <section
+          id="workspace-runner"
+          class="workspace-tab-pane"
+          data-workspace-pane="runner"
+          aria-label="Workspace test runner"
+          hidden
+        ></section>
       </aside>
     </div>
 
@@ -295,12 +583,11 @@
         input.focus();
       });
 
-      // Hero "Sign in with ChatGPT" → open the same modal as the footer button
+      // Hero sign-in opens the app's login modal.
       document.addEventListener("click", (event) => {
         const trigger = event.target.closest("[data-hero-signin]");
         if (!trigger) return;
-        const accountBtn = document.getElementById("account-btn");
-        if (accountBtn) accountBtn.click();
+        document.dispatchEvent(new CustomEvent("codex:open-login"));
       });
 
       // Copy button on rendered code blocks
@@ -323,7 +610,10 @@
         }
         try {
           const { showToast } = await import("/toast.js");
-          showToast(ok ? "Copied to clipboard." : "Clipboard access denied.", ok ? "success" : "error");
+          showToast(
+            ok ? "Copied to clipboard." : "Clipboard access denied.",
+            ok ? "success" : "error",
+          );
         } catch {}
         setTimeout(() => {
           btn.textContent = original;

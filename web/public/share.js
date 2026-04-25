@@ -60,13 +60,17 @@ async function loadShare() {
   if (!response.ok) {
     $("#share-title").textContent = "Shared thread unavailable";
     $("#share-meta").textContent = "";
-    showStatus(data.error ?? `Could not load share (${response.status}).`, "error");
+    showStatus(
+      data.error ?? `Could not load share (${response.status}).`,
+      "error",
+    );
     return;
   }
 
   const thread = data.thread ?? {};
   document.title = `${thread.name ?? thread.id ?? "Shared thread"} · Codex Web`;
-  $("#share-title").textContent = thread.name ?? thread.preview ?? thread.id ?? "Shared thread";
+  $("#share-title").textContent =
+    thread.name ?? thread.preview ?? thread.id ?? "Shared thread";
   $("#share-meta").textContent =
     `${data.mode ?? "readonly"} view · expires ${formatTimestamp(data.expiresAt)} · updated ${formatTimestamp(thread.updatedAt ?? data.createdAt)}`;
 
@@ -84,7 +88,9 @@ async function loadShare() {
 
 void loadShare().catch((error) => {
   const message =
-    error instanceof Error && error.message ? error.message : "Could not load share.";
+    error instanceof Error && error.message
+      ? error.message
+      : "Could not load share.";
   const titleNode = $("#share-title");
   if (titleNode) titleNode.textContent = "Shared thread unavailable";
   const metaNode = $("#share-meta");

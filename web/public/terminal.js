@@ -34,10 +34,13 @@ export function createTerminal({ appendSystem }) {
 
   function scheduleReconnect() {
     if (reconnectTimer || !currentWorkdir) return;
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      connect();
-    }, Math.min(4000, 500 * 2 ** reconnectAttempts++));
+    reconnectTimer = setTimeout(
+      () => {
+        reconnectTimer = null;
+        connect();
+      },
+      Math.min(4000, 500 * 2 ** reconnectAttempts++),
+    );
   }
 
   function setStatus(nextStatus, nextShell = shell) {
@@ -97,8 +100,9 @@ export function createTerminal({ appendSystem }) {
       </div>
     `;
     $("#workspace-terminal-output").textContent = output;
-    $("#workspace-terminal-output").scrollTop =
-      $("#workspace-terminal-output").scrollHeight;
+    $("#workspace-terminal-output").scrollTop = $(
+      "#workspace-terminal-output",
+    ).scrollHeight;
     $("#workspace-terminal-send")?.addEventListener("click", () => {
       void submit();
     });

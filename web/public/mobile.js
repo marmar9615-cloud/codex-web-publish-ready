@@ -149,7 +149,10 @@ export function createMobilePreview({ appendSystem }) {
       try {
         await fetchStatus();
       } catch (error) {
-        appendSystem(`mobile preview refresh failed: ${error.message}`, "error");
+        appendSystem(
+          `mobile preview refresh failed: ${error.message}`,
+          "error",
+        );
       } finally {
         if (button) button.disabled = false;
       }
@@ -168,6 +171,16 @@ export function createMobilePreview({ appendSystem }) {
     $("#workspace-mobile-stop")?.addEventListener("click", async () => {
       const button = $("#workspace-mobile-stop");
       if (button) button.disabled = true;
+      stopPolling();
+      snapshot = {
+        ...snapshot,
+        running: false,
+        status: "stopped",
+        output: trimLocalOutput(
+          `${snapshot.output || ""}\n[codex-web] stopped mobile preview\n`,
+        ),
+      };
+      render();
       try {
         await stop();
       } catch (error) {
@@ -178,11 +191,18 @@ export function createMobilePreview({ appendSystem }) {
     });
   }
 
+  function trimLocalOutput(value) {
+    const text = String(value ?? "");
+    return text.length <= 8000 ? text : text.slice(-8000);
+  }
+
   async function fetchStatus(options = {}) {
     const response = await fetch("/api/mobile/status");
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error ?? `mobile preview failed (${response.status})`);
+      throw new Error(
+        data.error ?? `mobile preview failed (${response.status})`,
+      );
     }
     snapshot = {
       ...snapshot,
@@ -191,7 +211,10 @@ export function createMobilePreview({ appendSystem }) {
     render();
     schedulePolling();
     if (!options.quiet && !snapshot.detected) {
-      appendSystem("No Expo project detected in the active workspace yet.", "warn");
+      appendSystem(
+        "No Expo project detected in the active workspace yet.",
+        "warn",
+      );
     }
   }
 
@@ -201,7 +224,9 @@ export function createMobilePreview({ appendSystem }) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error ?? `mobile preview start failed (${response.status})`);
+      throw new Error(
+        data.error ?? `mobile preview start failed (${response.status})`,
+      );
     }
     snapshot = {
       ...snapshot,
@@ -217,7 +242,9 @@ export function createMobilePreview({ appendSystem }) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error ?? `mobile preview stop failed (${response.status})`);
+      throw new Error(
+        data.error ?? `mobile preview stop failed (${response.status})`,
+      );
     }
     snapshot = {
       ...snapshot,

@@ -103,12 +103,14 @@ export function createRenderers({
     const whoami = state.whoami;
     const status = $("#account-status");
     const button = $("#account-btn");
-    if (!status || !button) return;
+    if (!status) return;
     // Reset mutable attributes between renders so we don't leak stale state
     // (e.g. a stale tooltip when the user signs out).
     status.removeAttribute("title");
-    button.removeAttribute("title");
-    button.classList.remove("icon-btn", "ghost");
+    if (button) {
+      button.removeAttribute("title");
+      button.classList.remove("icon-btn", "ghost");
+    }
     if (!whoami) {
       status.textContent = "—";
       return;
@@ -116,12 +118,14 @@ export function createRenderers({
     const signOutIcon =
       '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true"><path d="M8 14.5 4.5 11H12V9H4.5L8 5.5M12 3h3a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 15 17h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const setSignOutButton = (title) => {
+      if (!button) return;
       button.innerHTML = signOutIcon;
       button.classList.add("icon-btn", "ghost");
       button.setAttribute("aria-label", "Sign out");
       button.setAttribute("title", title);
     };
     const setSignInButton = (label = "Sign in") => {
+      if (!button) return;
       button.textContent = label;
       button.removeAttribute("aria-label");
     };
@@ -133,7 +137,9 @@ export function createRenderers({
       status.textContent = `ChatGPT: ${detail}`;
       status.setAttribute("title", detail);
       status.classList.remove("muted");
-      setSignOutButton(`Sign out${whoami.account?.email ? ` (${whoami.account.email})` : ""}`);
+      setSignOutButton(
+        `Sign out${whoami.account?.email ? ` (${whoami.account.email})` : ""}`,
+      );
     } else if (whoami.oauthPending) {
       status.textContent = "ChatGPT sign-in pending";
       status.classList.remove("muted");
@@ -184,9 +190,9 @@ export function createRenderers({
       if (!project.system) {
         const actions = el("div", { class: "project-actions" });
         const deleteButton = el("button", {
-          class: "project-delete ghost",
-          type: "button",
-          title: `Delete ${project.name ?? project.slug ?? "project"}`,
+          "class": "project-delete ghost",
+          "type": "button",
+          "title": `Delete ${project.name ?? project.slug ?? "project"}`,
           "aria-label": `Delete ${project.name ?? project.slug ?? "project"}`,
         });
         deleteButton.textContent = "×";
@@ -451,8 +457,8 @@ export function createRenderers({
       const tools = el("div", { class: "msg-tools" });
       const makeIconBtn = (label, title, svg, handler) => {
         const btn = el("button", {
-          class: "msg-tool-icon",
-          type: "button",
+          "class": "msg-tool-icon",
+          "type": "button",
           title,
           "aria-label": label,
         });
@@ -583,7 +589,8 @@ export function createRenderers({
       ...(item.text ? [item.text] : []),
     ].filter(Boolean);
     const body = parts.join("\n\n");
-    const effort = item.reasoningEffort || state.settings?.modelReasoningEffort || "";
+    const effort =
+      item.reasoningEffort || state.settings?.modelReasoningEffort || "";
     const details = el("details", { class: "reasoning", open: "" });
     const summary = el("summary", { class: "reasoning-summary" });
     const label = el("span", { class: "reasoning-label" });
@@ -607,7 +614,8 @@ export function createRenderers({
 
   function firstLine(text, limit) {
     if (!text) return "";
-    const line = text.split("\n").find((entry) => entry.trim().length > 0) ?? "";
+    const line =
+      text.split("\n").find((entry) => entry.trim().length > 0) ?? "";
     const clean = line.trim().replace(/\s+/g, " ");
     return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean;
   }

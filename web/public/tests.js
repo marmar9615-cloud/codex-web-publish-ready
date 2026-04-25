@@ -20,9 +20,8 @@ function summarizeOutput(command, output, exitCode) {
         : `Exited with code ${exitCode}.`;
   }
   if (command[0] === "cargo") {
-    const match = /test result:\s+(\w+)\.\s+(\d+)\s+passed;\s+(\d+)\s+failed/i.exec(
-      output,
-    );
+    const match =
+      /test result:\s+(\w+)\.\s+(\d+)\s+passed;\s+(\d+)\s+failed/i.exec(output);
     if (match) {
       return `${match[2]} passed · ${match[3]} failed`;
     }
@@ -48,13 +47,17 @@ export function createTestRunner({ rpcCall, appendSystem }) {
 
   async function fileExists(root, name) {
     const result = await rpcCall("fs/readDirectory", { path: root });
-    const entries = new Set((result?.entries ?? []).map((entry) => entry.fileName));
+    const entries = new Set(
+      (result?.entries ?? []).map((entry) => entry.fileName),
+    );
     return entries.has(name);
   }
 
   async function detectNodeTestCommand(root) {
     const packageJsonPath = `${root.replace(/\/$/, "")}/package.json`;
-    const pkg = await rpcCall("fs/readFile", { path: packageJsonPath }).catch(() => null);
+    const pkg = await rpcCall("fs/readFile", { path: packageJsonPath }).catch(
+      () => null,
+    );
     const raw = decodeBase64Utf8(pkg?.dataBase64 ?? "");
     let scripts = {};
     try {
@@ -87,7 +90,9 @@ export function createTestRunner({ rpcCall, appendSystem }) {
     const root = state.whoami?.workdir ?? "";
     if (!root) return null;
     const result = await rpcCall("fs/readDirectory", { path: root });
-    const entries = new Set((result?.entries ?? []).map((entry) => entry.fileName));
+    const entries = new Set(
+      (result?.entries ?? []).map((entry) => entry.fileName),
+    );
     if (entries.has("package.json")) {
       const nodeCommand = await detectNodeTestCommand(root);
       if (nodeCommand) return nodeCommand;
@@ -212,7 +217,8 @@ export function createTestRunner({ rpcCall, appendSystem }) {
   }
 
   function handleOutputDelta(params) {
-    if (!currentRun?.running || params.processId !== currentRun.processId) return;
+    if (!currentRun?.running || params.processId !== currentRun.processId)
+      return;
     currentRun.output = `${currentRun.output}${decodeBase64Utf8(params.deltaBase64 ?? "")}`;
     currentRun.summary = summarizeOutput(
       currentRun.command,

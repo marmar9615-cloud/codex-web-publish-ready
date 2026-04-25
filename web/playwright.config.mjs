@@ -7,6 +7,7 @@ const shouldStartServer = !process.env.BASE_URL;
 export default {
   testDir: "./tests",
   timeout: 60_000,
+  workers: 1,
   use: {
     baseURL: BASE_URL,
     headless: true,
