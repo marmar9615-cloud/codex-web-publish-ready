@@ -144,7 +144,12 @@ export function createCommandHandler({
         }
         return;
       case "/approvals":
-        if (["never", "on-request", "on-failure", "untrusted"].includes(arg)) {
+        if (arg === "on-failure") {
+          appendSystem(
+            "approval policy on-failure is deprecated; use /approvals on-request.",
+            "error",
+          );
+        } else if (["never", "on-request", "untrusted"].includes(arg)) {
           state.settings.approvalPolicy = arg;
           save("settings", state.settings);
           updateStatusBar();

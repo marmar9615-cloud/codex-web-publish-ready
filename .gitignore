@@ -74,6 +74,7 @@ personal/
 .playwright-cli/
 attached_assets/
 web/.workdirs/
+web/.test-state/
 web/projects/
 web/shares/
 web/output/

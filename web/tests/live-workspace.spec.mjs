@@ -7,7 +7,7 @@ test.describe("Codex Web — workspace shell", () => {
 
     await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
     await expect(page.locator("#workspace-panel")).toBeVisible();
-    await expect(page.locator("#workspace-root-path")).toContainText("/.workdirs/");
+    await expect(page.locator("#workspace-root-path")).toContainText("/workdirs/");
 
     const projectName = `Workspace ${Date.now()}`;
     page.once("dialog", (dialog) => dialog.accept(projectName));
@@ -23,7 +23,7 @@ test.describe("Codex Web — workspace shell", () => {
     await expect(page.locator("#workspace-root-path")).toContainText(`/projects/${projectSlug}`);
     await expect(page.locator("#workspace-root-chip")).toContainText(projectName);
 
-    await page.getByRole("button", { name: /codex-project\.json/ }).click();
+    await page.getByRole("treeitem", { name: /codex-project\.json/ }).click();
     await expect(page.locator("#workspace-viewer")).toContainText(projectSlug);
 
     await page.locator("#settings-btn").click();

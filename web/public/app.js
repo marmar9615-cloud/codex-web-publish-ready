@@ -399,8 +399,11 @@ async function refreshProjects() {
 async function refreshThreads() {
   try {
     if (state.initialized) {
-      const response = await rpc.rpcCall("thread/list", { limit: 100 });
-      state.threads = (response?.data ?? []).map((thread) => ({
+      const [activeResponse, archivedResponse] = await Promise.all([
+        rpc.rpcCall("thread/list", { limit: 100, archived: false }),
+        rpc.rpcCall("thread/list", { limit: 100, archived: true }),
+      ]);
+      const toSnapshot = (thread, archived) => ({
         id: thread.id,
         name: thread.name ?? thread.preview ?? thread.id,
         preview: thread.preview ?? "",
@@ -412,9 +415,17 @@ async function refreshThreads() {
           (thread.updatedAt ??
             thread.createdAt ??
             Math.floor(Date.now() / 1000)) * 1000,
-        status: thread.status ?? "active",
-        archived: thread.status === "archived",
-      }));
+        status: archived ? "archived" : (thread.status ?? "active"),
+        archived,
+      });
+      state.threads = [
+        ...(activeResponse?.data ?? []).map((thread) =>
+          toSnapshot(thread, false),
+        ),
+        ...(archivedResponse?.data ?? []).map((thread) =>
+          toSnapshot(thread, true),
+        ),
+      ];
     } else {
       const response = await fetch("/api/threads");
       const data = await response.json();
@@ -550,8 +561,8 @@ async function pushSettingsToBackend() {
       mergeStrategy: "replace",
     },
     {
-      keyPath: "tools.web_search",
-      value: settings.webSearchMode !== "disabled",
+      keyPath: "web_search",
+      value: settings.webSearchMode,
       mergeStrategy: "replace",
     },
   ];
@@ -1952,7 +1963,7 @@ function onSubmit(event) {
 function selectedModelId() {
   if (state.settings.model) return state.settings.model;
   const pick = state.models.find((model) => model.isDefault) ?? state.models[0];
-  return modelSlug(pick) || "gpt-5";
+  return modelSlug(pick) || "gpt-5.5";
 }
 
 function buildCollaborationMode() {

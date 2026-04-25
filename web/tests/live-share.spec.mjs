@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { BASE_URL } from "./helpers.mjs";
+import { BASE_URL, sameOriginHeaders } from "./helpers.mjs";
 
 test.describe("Codex Web — shared thread replay", () => {
   test("serves a signed read-only thread replay page", async ({ page, request }) => {
@@ -47,6 +47,7 @@ test.describe("Codex Web — shared thread replay", () => {
     const createResponse = await request.post(
       `${BASE_URL}/api/threads/${encodeURIComponent(threadId)}/share`,
       {
+        headers: sameOriginHeaders(),
         data: {
           mode: "readonly",
           ttl: 60 * 60,

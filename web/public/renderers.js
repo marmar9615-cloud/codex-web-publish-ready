@@ -210,9 +210,17 @@ export function createRenderers({
       "active",
       !state.filterArchived,
     );
+    $("#thread-filter-active")?.setAttribute(
+      "aria-selected",
+      state.filterArchived ? "false" : "true",
+    );
     $("#thread-filter-archived")?.classList.toggle(
       "active",
       state.filterArchived,
+    );
+    $("#thread-filter-archived")?.setAttribute(
+      "aria-selected",
+      state.filterArchived ? "true" : "false",
     );
     const query = (state.threadSearchQuery ?? "").trim().toLowerCase();
     const pinned = getPinnedThreadIds();

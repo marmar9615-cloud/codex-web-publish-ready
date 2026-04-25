@@ -1,6 +1,6 @@
 import http from "node:http";
 import { test, expect } from "@playwright/test";
-import { gotoReady } from "./helpers.mjs";
+import { gotoReady, openWorkspaceTab } from "./helpers.mjs";
 
 test.describe("Codex Web — live preview", () => {
   test("renders a proxied local preview inside the workspace panel", async ({ page }) => {
@@ -40,6 +40,7 @@ test.describe("Codex Web — live preview", () => {
 
     try {
       await gotoReady(page);
+      await openWorkspaceTab(page, "Preview");
 
       await page.locator("#workspace-preview-port").fill(String(previewPort));
       await page.locator("#workspace-preview-path").fill("/");

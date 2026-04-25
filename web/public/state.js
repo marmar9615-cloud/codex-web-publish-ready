@@ -113,6 +113,11 @@ export const state = {
   ],
 };
 
+if (state.settings.approvalPolicy === "on-failure") {
+  state.settings.approvalPolicy = "on-request";
+  save("settings", state.settings);
+}
+
 if (typeof window !== "undefined") {
   window.state = state;
 }

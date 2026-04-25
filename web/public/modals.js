@@ -3259,7 +3259,7 @@ export function createModals({
       ${panel(
         "approvals",
         `
-        <div class="modal-row"><label>Approval policy</label>${select("approvalPolicy", ["never", "on-request", "on-failure", "untrusted"])}</div>
+        <div class="modal-row"><label>Approval policy</label>${select("approvalPolicy", ["never", "on-request", "untrusted"])}</div>
         <div class="modal-row"><label>Sandbox</label>${select("sandboxMode", ["read-only", "workspace-write", "danger-full-access"])}</div>
         <div class="modal-row"><label><input type="checkbox" name="networkAccessEnabled" ${settings.networkAccessEnabled ? "checked" : ""} /> Allow network access in sandbox</label></div>
       `,

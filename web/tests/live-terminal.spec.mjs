@@ -1,12 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { gotoReady } from "./helpers.mjs";
 
 test.describe("Codex Web — embedded terminal", () => {
   test("runs a shell command inside the active workspace", async ({ page }) => {
-    const baseUrl = process.env.BASE_URL ?? "http://localhost:5000";
-    await page.goto(baseUrl);
-    await expect(page.locator("#backend-pill")).toContainText("backend: real", {
-      timeout: 15_000,
-    });
+    await gotoReady(page);
 
     await expect(page.locator("#workspace-terminal")).toContainText(/(running|connected)/);
 

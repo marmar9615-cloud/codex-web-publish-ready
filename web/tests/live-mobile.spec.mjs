@@ -1,10 +1,11 @@
 import { writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { test, expect } from "@playwright/test";
-import { gotoReady } from "./helpers.mjs";
-
-const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+import {
+  activeWorkspaceRoot,
+  gotoReady,
+  openWorkspaceTab,
+} from "./helpers.mjs";
 
 test.describe("Codex Web — mobile preview", () => {
   test("detects an Expo-style workspace and renders a mobile QR preview", async ({
@@ -20,7 +21,7 @@ test.describe("Codex Web — mobile preview", () => {
     await page.locator(".project-main").filter({ hasText: projectName }).click();
     await expect(page.locator("#workspace-root-path")).toContainText(`/projects/${projectSlug}`);
 
-    const projectDir = join(WEB_ROOT, "projects", projectSlug);
+    const projectDir = await activeWorkspaceRoot(page);
     writeFileSync(
       join(projectDir, "app.json"),
       `${JSON.stringify(
@@ -61,6 +62,7 @@ test.describe("Codex Web — mobile preview", () => {
       ].join("\n"),
     );
 
+    await openWorkspaceTab(page, "Mobile");
     await page.locator("#workspace-mobile-refresh").click();
     await expect(page.locator("#workspace-mobile")).toContainText("app.json");
     await expect(page.locator("#workspace-mobile")).toContainText(

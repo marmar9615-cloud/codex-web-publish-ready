@@ -1,10 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { test, expect } from "@playwright/test";
-import { gotoReady } from "./helpers.mjs";
-
-const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+import { activeWorkspaceRoot, gotoReady } from "./helpers.mjs";
 
 test.describe("Codex Web — database browser", () => {
   test("opens a sqlite database in the workspace and browses its tables", async ({
@@ -22,13 +19,14 @@ test.describe("Codex Web — database browser", () => {
 
     const projectSlug = projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     await expect(page.locator("#workspace-root-path")).toContainText(`/projects/${projectSlug}`);
+    const projectDir = await activeWorkspaceRoot(page);
     execFileSync("sqlite3", [
-      join(WEB_ROOT, "projects", projectSlug, "launch.sqlite"),
+      join(projectDir, "launch.sqlite"),
       "create table users (id integer primary key, name text, role text); insert into users (name, role) values ('Mara', 'owner'), ('Claude', 'builder'); create table deploys (id integer primary key, status text); insert into deploys (status) values ('ready');",
     ]);
 
     await page.locator("#workspace-refresh-btn").click();
-    const dbFile = page.getByRole("button", { name: /launch\.sqlite/ });
+    const dbFile = page.getByRole("treeitem", { name: /launch\.sqlite/ });
     await expect(dbFile).toBeVisible({ timeout: 15_000 });
     await dbFile.click();
 
