@@ -1,6 +1,6 @@
-# Upgrading to GPT-5.4
+# Upgrading to GPT-5.5
 
-Use this guide when the user explicitly asks to upgrade an existing integration to GPT-5.4. Pair it with current OpenAI docs lookups. The default target string is `gpt-5.4`.
+Use this guide when the user explicitly asks to upgrade an existing integration to GPT-5.5. Pair it with current OpenAI docs lookups. The default target string is `gpt-5.5`.
 
 ## Upgrade posture
 
@@ -26,12 +26,12 @@ Upgrade with the narrowest safe change set:
    - `model string + light prompt rewrite`
    - `blocked without code changes`
 5. Run the no-code compatibility gate.
-   - Check whether the current integration can accept `gpt-5.4` without API-surface changes or implementation changes.
+   - Check whether the current integration can accept `gpt-5.5` without API-surface changes or implementation changes.
    - For long-running Responses or tool-heavy agents, check whether `phase` is already preserved or round-tripped when the host replays assistant items or uses preambles.
    - If compatibility depends on code changes, return `blocked`.
    - If compatibility is unclear, return `unknown` rather than improvising.
 6. Recommend the upgrade.
-   - Default replacement string: `gpt-5.4`
+   - Default replacement string: `gpt-5.5`
    - Keep the intervention small and behavior-preserving.
 7. Deliver a structured recommendation.
    - `Current model usage`
@@ -61,7 +61,7 @@ Choose this when:
 
 Default action:
 
-- replace the model string with `gpt-5.4`
+- replace the model string with `gpt-5.5`
 - keep prompts unchanged
 - validate behavior with existing evals or spot checks
 
@@ -78,16 +78,16 @@ Choose this when:
 
 Default action:
 
-- replace the model string with `gpt-5.4`
+- replace the model string with `gpt-5.5`
 - add one or two targeted prompt blocks
-- read `references/gpt-5p4-prompting-guide.md` to choose the smallest prompt changes that recover the old behavior
+- read `references/gpt-5p5-prompting-guide.md` to choose the smallest prompt changes that recover the old behavior
 - avoid broad prompt cleanup unrelated to the upgrade
 - for research workflows, default to `research_mode` + `citation_rules` + `empty_result_handling`; add `tool_persistence_rules` when the host already uses retrieval tools
 - for dependency-aware or tool-heavy workflows, default to `tool_persistence_rules` + `dependency_checks` + `verification_loop`; add `parallel_tool_calling` only when retrieval steps are truly independent
 - for coding or terminal workflows, default to `terminal_tool_hygiene` + `verification_loop`
 - for multi-agent support or triage workflows, default to at least one of `tool_persistence_rules`, `completeness_contract`, or `verification_loop`
 - for long-running Responses agents with preambles or multiple assistant messages, explicitly review whether `phase` is already handled; if adding or preserving `phase` would require code edits, mark the path as `blocked`
-- do not classify a coding or tool-using Responses workflow as `blocked` just because the visible snippet is minimal; prefer `model string + light prompt rewrite` unless the repo clearly shows that a safe GPT-5.4 path would require host-side code changes
+- do not classify a coding or tool-using Responses workflow as `blocked` just because the visible snippet is minimal; prefer `model string + light prompt rewrite` unless the repo clearly shows that a safe GPT-5.5 path would require host-side code changes
 
 ### `blocked`
 
@@ -107,7 +107,7 @@ Default action:
 
 Before recommending a no-code upgrade, check:
 
-1. Can the current host accept the `gpt-5.4` model string without changing client code or API surface?
+1. Can the current host accept the `gpt-5.5` model string without changing client code or API surface?
 2. Are the related prompts identifiable and editable?
 3. Does the host depend on behavior that likely needs API-surface changes, parameter rewrites, or tool rewiring?
 4. Would the likely fix be prompt-only, or would it need implementation changes?
@@ -144,7 +144,7 @@ This guide may not:
 - add or retrofit `phase` handling in implementation code
 - edit business logic, orchestration logic, or SDK usage beyond a literal model-string replacement
 
-If a safe GPT-5.4 upgrade requires any of those changes, mark the path as blocked and out of scope.
+If a safe GPT-5.5 upgrade requires any of those changes, mark the path as blocked and out of scope.
 
 ## Validation plan
 
@@ -155,10 +155,10 @@ If a safe GPT-5.4 upgrade requires any of those changes, mark the path as blocke
 
 ## Launch-day refresh items
 
-When final GPT-5.4 guidance changes:
+When final GPT-5.5 guidance changes:
 
-1. Replace release-candidate assumptions with final GPT-5.4 guidance where appropriate.
-2. Re-check whether the default target string should stay `gpt-5.4` for all source families.
+1. Replace release-candidate assumptions with final GPT-5.5 guidance where appropriate.
+2. Re-check whether the default target string should stay `gpt-5.5` for all source families.
 3. Re-check any prompt-block recommendations whose semantics may have changed.
 4. Re-check research, citation, and compatibility guidance against the final model behavior.
 5. Re-run the same upgrade scenarios and confirm the blocked-versus-viable boundaries still hold.
