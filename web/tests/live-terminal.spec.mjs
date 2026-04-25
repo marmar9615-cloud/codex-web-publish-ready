@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { gotoReady } from "./helpers.mjs";
+import { gotoReady, openWorkspaceTab } from "./helpers.mjs";
 
 test.describe("Codex Web — embedded terminal", () => {
   test("runs a shell command inside the active workspace", async ({ page }) => {
     await gotoReady(page);
+    await openWorkspaceTab(page, "Terminal");
 
     await expect(page.locator("#workspace-terminal")).toContainText(/(running|connected)/);
 

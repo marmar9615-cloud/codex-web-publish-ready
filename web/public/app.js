@@ -1120,6 +1120,7 @@ function bindUi() {
   $("#composer").addEventListener("submit", onSubmit);
   $("#cancel-btn").addEventListener("click", () => void interruptTurn());
   $("#new-thread").addEventListener("click", newThread);
+  $("#sidebar-collapse-btn")?.addEventListener("click", toggleSidebar);
   $("#sidebar-toggle-btn")?.addEventListener("click", toggleSidebar);
   bindWorkspaceTabs();
   bindTranscriptScrollAffordance();
@@ -1234,6 +1235,21 @@ function toggleSidebar() {
   try {
     localStorage.setItem("sidebarCollapsed", next ? "1" : "0");
   } catch {}
+  syncSidebarToggleState();
+}
+
+function syncSidebarToggleState() {
+  const collapsed = document.body.classList.contains("sidebar-collapsed");
+  const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  const sidebarButton = $("#sidebar-collapse-btn");
+  if (sidebarButton) {
+    sidebarButton.setAttribute("aria-label", label);
+    sidebarButton.title = label;
+  }
+  const chatButton = $("#sidebar-toggle-btn");
+  if (chatButton) {
+    chatButton.setAttribute("aria-pressed", collapsed ? "false" : "true");
+  }
 }
 
 function applyPersistedSidebarState() {
@@ -1243,11 +1259,12 @@ function applyPersistedSidebarState() {
       document.body.classList.add("sidebar-collapsed");
     }
   } catch {}
+  syncSidebarToggleState();
 }
 
 function activateWorkspaceTab(name) {
-  const valid = new Set(["terminal", "preview", "mobile", "runner"]);
-  const target = valid.has(name) ? name : "terminal";
+  const valid = new Set(["files", "terminal", "preview", "mobile", "runner"]);
+  const target = valid.has(name) ? name : "files";
   for (const tab of document.querySelectorAll(".workspace-tab")) {
     const active = tab.dataset.workspaceTab === target;
     tab.classList.toggle("active", active);
@@ -1269,9 +1286,9 @@ function bindWorkspaceTabs() {
       activateWorkspaceTab(tab.dataset.workspaceTab ?? "terminal");
     });
   }
-  let initial = "terminal";
+  let initial = "files";
   try {
-    initial = localStorage.getItem("workspaceTab") ?? "terminal";
+    initial = localStorage.getItem("workspaceTab") ?? "files";
   } catch {}
   activateWorkspaceTab(initial);
 }
